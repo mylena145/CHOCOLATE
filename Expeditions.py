@@ -3,8 +3,9 @@ from PIL import Image, ImageTk
 import os
 import tkinter as tk
 from stock_management_page import SidebarFrame
-from tkinter import filedialog
+from tkinter import filedialog, messagebox
 from datetime import datetime, date
+import database
 
 # Import des fonctions de base de données
 try:
@@ -29,30 +30,25 @@ ctk.set_default_color_theme("blue")
 
 class GestionExpeditionsApp(ctk.CTkFrame):
     def __init__(self, master=None, user_info=None):
-        super().__init__(master)
-        self.master = master
-        self.configure(fg_color="white")
-        
-        # Données d'expéditions (sera rempli depuis la BD ou données de démonstration)
-        self.expeditions_data = []
-        self.expedition_stats = {}
-        
-        # Charger les données depuis la base de données
-        self.load_expeditions_data()
-        
-        # Données utilisateur pour la sidebar
-        self.user_info = user_info if user_info is not None else {
-            'prenom': 'Utilisateur',
-            'nom': 'Test',
-            'role': 'Admin'
-        }
-        
-        # Charger les données depuis la base de données
-        self.load_expeditions_data()
-
-        self.planning_frame = None  # Pour garder une référence au bloc planning
-        self._build_interface()
-        self._refresh_planning_periodically()  # Démarre le rafraîchissement auto
+        try:
+            super().__init__(master)
+            self.master = master
+            self.user_info = user_info
+            self.previous_page = getattr(master, 'last_page', None) if hasattr(master, 'last_page') else None
+            self.configure(fg_color="white")
+            
+            # Données d'expéditions (sera rempli depuis la BD ou données de démonstration)
+            self.expeditions_data = []
+            self.expedition_stats = {}
+            
+            # Charger les données depuis la base de données
+            self.load_expeditions_data()
+            
+            self.planning_frame = None  # Pour garder une référence au bloc planning
+            self._build_interface()
+            self._refresh_planning_periodically()  # Démarre le rafraîchissement auto
+        except Exception as e:
+            self._show_error(str(e))
     
     def load_expeditions_data(self):
         """Charge les données d'expéditions depuis la base de données"""
@@ -424,6 +420,23 @@ class GestionExpeditionsApp(ctk.CTkFrame):
         for txt, color, cmd in btns:
             btn = ctk.CTkButton(buttons_frame, text=txt, width=120, height=58, fg_color=color, hover_color=color, text_color="white", font=ctk.CTkFont(size=16, weight="bold"), corner_radius=12, command=cmd)
             btn.pack(side='left', padx=5)
+
+        # Ajout du bouton retour intelligent en haut à gauche
+        topbar = ctk.CTkFrame(self, fg_color="transparent")
+        topbar.pack(fill="x", pady=(10, 0))
+        btn_retour = ctk.CTkButton(
+            topbar,
+            text="← Retour",
+            width=110,
+            height=36,
+            fg_color="#2563eb",
+            hover_color="#1d4ed8",
+            text_color="white",
+            font=ctk.CTkFont(size=15, weight="bold"),
+            corner_radius=8,
+            command=self._go_back
+        )
+        btn_retour.pack(side="left", padx=18, pady=5)
 
     def _build_main_content(self):
         """Construction du contenu principal"""
@@ -1191,6 +1204,26 @@ class GestionExpeditionsApp(ctk.CTkFrame):
         except Exception as e:
             print(f"Erreur lors du rafraîchissement du planning: {e}")
         self.after(30000, self._refresh_planning_periodically)  # 30 secondes
+
+    def _go_back(self):
+        """Retourne à la page précédente si possible, sinon dashboard"""
+        if hasattr(self.master, 'show_dashboard') and self.previous_page is None:
+            self.master.show_dashboard(self.user_info)
+        elif hasattr(self.master, 'show_' + str(self.previous_page)):
+            getattr(self.master, 'show_' + str(self.previous_page))()
+        elif hasattr(self.master, 'show_dashboard'):
+            self.master.show_dashboard(self.user_info)
+        else:
+            messagebox.showinfo("Retour", "Impossible de revenir en arrière. Redémarrez l'application.")
+
+    def _show_error(self, message):
+        for widget in self.winfo_children():
+            widget.destroy()
+        error_frame = ctk.CTkFrame(self, fg_color="#fee2e2", corner_radius=12)
+        error_frame.pack(fill="both", expand=True, padx=60, pady=60)
+        ctk.CTkLabel(error_frame, text="❌ Erreur lors de l'affichage de la page expédition", font=ctk.CTkFont(size=20, weight="bold"), text_color="#b91c1c").pack(pady=(30, 10))
+        ctk.CTkLabel(error_frame, text=message, font=ctk.CTkFont(size=15), text_color="#b91c1c").pack(pady=(0, 20))
+        ctk.CTkButton(error_frame, text="🏠 Retour à l'accueil", fg_color="#2563eb", text_color="white", font=ctk.CTkFont(size=15, weight="bold"), command=self._go_back).pack(pady=10)
 
 
 if __name__ == "__main__":

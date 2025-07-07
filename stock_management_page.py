@@ -3,54 +3,50 @@ from PIL import Image
 from sidebar import SidebarFrame
 from CTkToolTip import CTkToolTip
 import pandas as pd
-from tkinter import filedialog
+from tkinter import filedialog, messagebox
 import matplotlib.pyplot as plt
 from responsive_utils import ThemeToggleButton
+from database import get_all_colis
 
 class StockManagementFrame(ctk.CTkFrame):
     def __init__(self, master, user_info=None):
-        super().__init__(master, fg_color="white")
-        self.pack(fill="both", expand=True)
-        if user_info is None:
-            user_info = {
+        try:
+            super().__init__(master, fg_color="white")
+            self.pack(fill="both", expand=True)
+            self.master = master
+            self.user_info = user_info if user_info is not None else {
                 'prenom': 'Utilisateur',
                 'nom': 'Test',
                 'role': 'Admin',
                 'email': 'test@example.com',
                 'matricule': '12345'
             }
-        self.sidebar = SidebarFrame(self, master)
-        self.sidebar.pack(side="left", fill="y")
-        self.sidebar.set_active_button("Stocks")
-        
-        # Lier le redimensionnement
-        self.bind("<Configure>", self._on_frame_resize)
-        
-        self.main_content = ctk.CTkFrame(self, fg_color="white")
-        self.main_content.pack(side="right", fill="both", expand=True)
-        
-        self.active_stock_filter = "Tous"
-        self.search_term = ""
-
-        # Pagination
-        self.current_page = 1
-        self.items_per_page = 10
-        
-        # Charger les produits depuis la base de données
-        try:
-            from database import get_all_products, add_product, update_product, delete_product as db_delete_product
-            self.products = get_all_products()
-            self._add_product_db = add_product
-            self._update_product_db = update_product
-            self._delete_product_db = db_delete_product
+            self.previous_page = getattr(master, 'last_page', None) if hasattr(master, 'last_page') else None
+            self.sidebar = SidebarFrame(self, master)
+            self.sidebar.pack(side="left", fill="y")
+            self.sidebar.set_active_button("Stocks")
+            self.bind("<Configure>", self._on_frame_resize)
+            self.main_content = ctk.CTkFrame(self, fg_color="white")
+            self.main_content.pack(side="right", fill="both", expand=True)
+            self.active_stock_filter = "Tous"
+            self.search_term = ""
+            self.current_page = 1
+            self.items_per_page = 10
+            try:
+                from database import get_all_products, add_product, update_product, delete_product as db_delete_product
+                self.products = get_all_products()
+                self._add_product_db = add_product
+                self._update_product_db = update_product
+                self._delete_product_db = db_delete_product
+            except Exception as e:
+                print(f"Erreur lors du chargement des produits depuis la base : {e}")
+                self.products = []
+                self._add_product_db = None
+                self._update_product_db = None
+                self._delete_product_db = None
+            self.create_widgets()
         except Exception as e:
-            print(f"Erreur lors du chargement des produits depuis la base : {e}")
-            self.products = []
-            self._add_product_db = None
-            self._update_product_db = None
-            self._delete_product_db = None
-        
-        self.create_widgets()
+            self._show_error(str(e))
 
     def create_widgets(self):
         main_frame = ctk.CTkFrame(self.main_content, fg_color="transparent")
@@ -58,25 +54,55 @@ class StockManagementFrame(ctk.CTkFrame):
         self._build_topbar()
         self.create_summary_cards(main_frame)
         self.create_filter_bar(main_frame)
+        topbar = ctk.CTkFrame(main_frame, fg_color="transparent")
+        topbar.pack(fill="x", pady=(10, 0))
+        btn_retour = ctk.CTkButton(
+            topbar,
+            text="← Retour",
+            width=110,
+            height=36,
+            fg_color="#2563eb",
+            hover_color="#1d4ed8",
+            text_color="white",
+            font=ctk.CTkFont(size=15, weight="bold"),
+            corner_radius=8,
+            command=self._go_back
+        )
+        btn_retour.pack(side="left", padx=18, pady=5)
         self.product_list_container = ctk.CTkFrame(main_frame, fg_color="transparent")
         self.product_list_container.pack(fill="both", expand=True)
         self.refresh_product_list()
+
+    def _go_back(self):
+        if hasattr(self.master, 'show_dashboard') and self.previous_page is None:
+            self.master.show_dashboard(self.user_info)
+        elif hasattr(self.master, 'show_' + str(self.previous_page)):
+            getattr(self.master, 'show_' + str(self.previous_page))()
+        elif hasattr(self.master, 'show_dashboard'):
+            self.master.show_dashboard(self.user_info)
+        else:
+            messagebox.showinfo("Retour", "Impossible de revenir en arrière. Redémarrez l'application.")
+
+    def _show_error(self, message):
+        for widget in self.winfo_children():
+            widget.destroy()
+        error_frame = ctk.CTkFrame(self, fg_color="#fee2e2", corner_radius=12)
+        error_frame.pack(fill="both", expand=True, padx=60, pady=60)
+        ctk.CTkLabel(error_frame, text="❌ Erreur lors de l'affichage de la page stock", font=ctk.CTkFont(size=20, weight="bold"), text_color="#b91c1c").pack(pady=(30, 10))
+        ctk.CTkLabel(error_frame, text=message, font=ctk.CTkFont(size=15), text_color="#b91c1c").pack(pady=(0, 20))
+        ctk.CTkButton(error_frame, text="🏠 Retour à l'accueil", fg_color="#2563eb", text_color="white", font=ctk.CTkFont(size=15, weight="bold"), command=self._go_back).pack(pady=10)
 
     def _build_topbar(self):
         topbar = ctk.CTkFrame(self.main_content, fg_color="white", height=70)
         topbar.pack(fill="x", pady=(18, 0), padx=24)
         topbar.grid_columnconfigure(0, weight=1)
-        
         title = ctk.CTkLabel(topbar, text="Gestion des Stocks", font=ctk.CTkFont(size=22, weight="bold"), text_color="#222")
         title.grid(row=0, column=0, sticky="w", pady=(8,0))
-        
         subtitle = ctk.CTkLabel(topbar, text="Inventaire et gestion des produits", font=ctk.CTkFont(size=14), text_color="#666")
         subtitle.grid(row=1, column=0, sticky="w")
-        
         # Bouton de thème
-        self.theme_button = ThemeToggleButton(topbar, self.parent)
+        self.theme_button = ThemeToggleButton(topbar, self.master)
         self.theme_button.grid(row=0, column=1, rowspan=2, sticky="e", padx=(0,20))
-        
         btn = ctk.CTkButton(topbar, text="➕ Ajouter Produit", fg_color="#3b82f6", hover_color="#2563eb", text_color="white", corner_radius=8, font=ctk.CTkFont(size=14, weight="bold"), width=150, height=36, command=self._open_add_product_modal)
         btn.grid(row=0, column=2, rowspan=2, sticky="e", padx=(0,20))
 
@@ -84,42 +110,50 @@ class StockManagementFrame(ctk.CTkFrame):
         ExportPopup(self)
 
     def create_summary_cards(self, parent):
-        cards_frame = ctk.CTkFrame(parent, fg_color="transparent")
-        cards_frame.pack(fill="x", pady=(0, 20))
-
+        self.cards_frame = ctk.CTkFrame(parent, fg_color="transparent")
+        self.cards_frame.pack(fill="x", pady=(0, 20))
+        self.summary_cards = []
+        # Création initiale des widgets
         cards_data = [
-            {"icon": "📦", "title": "Total Produits", "value": "1,247", "subtitle": "+5% ce mois", "subtitle_color": "#059669", "icon_bg": "#D1FAE5"},
-            {"icon": "🧊", "title": "Lots Actifs", "value": "342", "subtitle": "En stock", "subtitle_color": "#6B7280", "icon_bg": "#DBEAFE"},
-            {"icon": "⚠️", "title": "Stock Critique", "value": "12", "subtitle": "À réapprovisionner", "subtitle_color": "#DC2626", "icon_bg": "#FEE2E2"},
-            {"icon": "💶", "title": "Valeur Stock", "value": "2 400 000 FCFA", "subtitle": "Total estimé", "subtitle_color": "#6B7280", "icon_bg": "#FEF3C7"}
+            {"icon": "📦", "title": "Total Produits", "value": "0", "subtitle": "", "subtitle_color": "#059669", "icon_bg": "#D1FAE5"},
+            {"icon": "🧊", "title": "Lots Actifs", "value": "0", "subtitle": "", "subtitle_color": "#6B7280", "icon_bg": "#DBEAFE"},
+            {"icon": "⚠️", "title": "Stock Critique", "value": "0", "subtitle": "", "subtitle_color": "#DC2626", "icon_bg": "#FEE2E2"},
+            {"icon": "💶", "title": "Valeur Stock", "value": "0 FCFA", "subtitle": "", "subtitle_color": "#6B7280", "icon_bg": "#FEF3C7"}
         ]
-
         for card_data in cards_data:
-            card = ctk.CTkFrame(cards_frame, fg_color="white", corner_radius=10, border_width=1, border_color="#E5E7EB")
+            card = ctk.CTkFrame(self.cards_frame, fg_color="white", corner_radius=10, border_width=1, border_color="#E5E7EB")
             card.pack(side="left", expand=True, fill="x", padx=10)
-            
             card_content = ctk.CTkFrame(card, fg_color="transparent")
             card_content.pack(padx=15, pady=15, expand=True, fill="x")
-
             top_frame = ctk.CTkFrame(card_content, fg_color="transparent")
             top_frame.pack(fill="x")
-
             icon_frame = ctk.CTkFrame(top_frame, fg_color=card_data["icon_bg"], width=40, height=40, corner_radius=8)
             icon_frame.pack(side="left", padx=(0, 10))
             icon_frame.pack_propagate(False)
-
             ctk.CTkLabel(
                 icon_frame, 
                 text=card_data["icon"], 
                 font=ctk.CTkFont(size=22),
                 text_color="#212224"
             ).pack(expand=True)
-            
             ctk.CTkLabel(top_frame, text=card_data["title"], font=ctk.CTkFont(size=15, weight="bold"), text_color="#374151").pack(side="left", anchor="center")
+            label_value = ctk.CTkLabel(card_content, text=card_data["value"], font=ctk.CTkFont(size=32, weight="bold"), text_color="#111827")
+            label_value.pack(anchor="w", pady=(10, 2))
+            label_sub = ctk.CTkLabel(card_content, text=card_data["subtitle"], font=ctk.CTkFont(size=13), text_color=card_data["subtitle_color"])
+            label_sub.pack(anchor="w")
+            self.summary_cards.append(label_value)
+        self._refresh_summary_cards()
 
-            ctk.CTkLabel(card_content, text=card_data["value"], font=ctk.CTkFont(size=32, weight="bold"), text_color="#111827").pack(anchor="w", pady=(10, 2))
-            
-            ctk.CTkLabel(card_content, text=card_data["subtitle"], font=ctk.CTkFont(size=13), text_color=card_data["subtitle_color"]).pack(anchor="w")
+    def _refresh_summary_cards(self):
+        import database
+        total = database.get_total_products()
+        lots = database.get_lots_actifs()
+        critique = database.get_stock_critique()
+        valeur = database.get_valeur_stock()
+        valeurs = [str(total), str(lots), str(critique), f"{valeur:,} FCFA"]
+        for label, val in zip(self.summary_cards, valeurs):
+            label.configure(text=val)
+        self.after(1000, self._refresh_summary_cards)
 
     def create_filter_bar(self, parent):
         filter_frame = ctk.CTkFrame(parent, fg_color="white", height=80, corner_radius=10, border_width=1, border_color="#E5E7EB")
@@ -396,9 +430,7 @@ class StockManagementFrame(ctk.CTkFrame):
             pass
     
     def _on_frame_resize(self, event):
-        """Gère le redimensionnement du frame"""
-        if event.width > 100 and event.height > 100:
-            self._adapt_layout_to_size(event.width, event.height)
+        pass
 
     def apply_theme(self, theme):
         """Applique le thème à la page de gestion des stocks"""
@@ -442,6 +474,17 @@ class StockManagementFrame(ctk.CTkFrame):
             
         except Exception as e:
             print(f"Erreur lors de l'application du thème à la page Stocks: {e}")
+
+    def _open_colis_popup(self):
+        popup = ColisPopup(self)
+        popup.grab_set()
+
+    def _open_add_product_modal(self):
+        popup = AddProductPopup(self)
+        self.wait_window(popup)
+        # Après ajout, recharger la liste
+        self.products = self._reload_products()
+        self.refresh_product_list()
 
 class EditProductPopup(ctk.CTkToplevel):
     def __init__(self, master, product_data):
@@ -868,6 +911,44 @@ class ExportPopup(BasePopup):
             print(f"Erreur d'exportation: {e}")
         
         self.destroy()
+
+class ColisPopup(ctk.CTkToplevel):
+    def __init__(self, master=None):
+        super().__init__(master)
+        self.title("Liste des Colis en Stock")
+        self.geometry("1100x600")
+        self.configure(fg_color="white")
+        self.resizable(True, True)
+        ctk.CTkLabel(self, text="📦 Liste des Colis en Stock", font=ctk.CTkFont(size=22, weight="bold"), text_color="#222").pack(pady=(18, 10))
+        # Tableau
+        table_frame = ctk.CTkFrame(self, fg_color="white")
+        table_frame.pack(fill="both", expand=True, padx=20, pady=10)
+        headers = [
+            "ID Colis", "Zone", "Réception", "Dimension", "Poids (kg)", "Emplacement", "Entrepôt", "Cellule", "Zone e1", "Zone e2", "Zone e3", "Date Réception"
+        ]
+        header_frame = ctk.CTkFrame(table_frame, fg_color="#f8fafc")
+        header_frame.pack(fill="x")
+        for i, h in enumerate(headers):
+            ctk.CTkLabel(header_frame, text=h, font=ctk.CTkFont(size=13, weight="bold"), text_color="#374151").grid(row=0, column=i, padx=8, pady=8)
+            header_frame.grid_columnconfigure(i, weight=1)
+        # Données
+        colis_list = get_all_colis()
+        if not colis_list:
+            ctk.CTkLabel(table_frame, text="Aucun colis en stock.", font=ctk.CTkFont(size=15), text_color="#ef4444").pack(pady=30)
+        else:
+            for row_idx, colis in enumerate(colis_list):
+                row_frame = ctk.CTkFrame(table_frame, fg_color="#f9fafb" if row_idx%2==0 else "white")
+                row_frame.pack(fill="x")
+                values = [
+                    colis['id'], colis['zone_stockage'], colis['reception'], colis['dimension'], colis['poids'],
+                    colis['emplacement'], colis['entrepot'], colis['cellule'], colis['zone_e1'], colis['zone_e2'], colis['zone_e3'],
+                    str(colis['date_reception'])[:10] if colis['date_reception'] else ""
+                ]
+                for col_idx, val in enumerate(values):
+                    ctk.CTkLabel(row_frame, text=str(val), font=ctk.CTkFont(size=12), text_color="#374151").grid(row=0, column=col_idx, padx=8, pady=6)
+                    row_frame.grid_columnconfigure(col_idx, weight=1)
+        # Bouton fermer
+        ctk.CTkButton(self, text="Fermer", fg_color="#ef4444", hover_color="#b91c1c", text_color="white", font=ctk.CTkFont(size=14, weight="bold"), width=120, height=36, command=self.destroy).pack(pady=18)
 
 if __name__ == "__main__":
     app = ctk.CTk()

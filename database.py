@@ -84,6 +84,7 @@ def get_all_products():
 import psycopg2
 import hashlib
 import os
+import datetime
 
 # Paramètres de connexion PostgreSQL
 PG_CONN = dict(
@@ -705,6 +706,336 @@ def search_expedition(search_term):
         print(f"Erreur lors de la recherche d'expédition: {e}")
         return []
 
+def get_today_expeditions():
+    """Récupère les expéditions dont la date de livraison est aujourd'hui"""
+    from datetime import date
+    today = date.today()
+    try:
+        conn = psycopg2.connect(**PG_CONN)
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT 
+                be.id_bon_expedition,
+                be.client,
+                be.reference_commande,
+                be.date_livraison,
+                be.observation,
+                be.liste_articles_livres,
+                be.transporteurs,
+                c.poids,
+                c.dimension,
+                COALESCE(c.id_colis, 0) as id_colis
+            FROM sge_cre.bon_expeditions be
+            LEFT JOIN sge_cre.colis c ON be.id_colis = c.id_colis
+            WHERE be.date_livraison = %s
+            ORDER BY be.id_bon_expedition
+        ''', (today,))
+        expeditions = cursor.fetchall()
+        conn.close()
+        expeditions_list = []
+        for exp in expeditions:
+            expedition_number = f"BE-2024-{exp[0]:03d}"
+            expeditions_list.append({
+                'id': exp[0],
+                'number': expedition_number,
+                'client': exp[1] if exp[1] else "Client non spécifié",
+                'shippingDate': today.strftime('%Y-%m-%d'),
+                'deliveryDate': today.strftime('%Y-%m-%d'),
+                'carrier': exp[6] if exp[6] else "Non spécifié",
+                'priority': "haute",
+                'packages': 1,
+                'totalWeight': float(exp[7]) if exp[7] else 0.0,
+                'status': "in-transit",
+                'trackingNumber': exp[2] if exp[2] else None,
+                'observation': exp[4] if exp[4] else "",
+                'articles': exp[5] if exp[5] else ""
+            })
+        return expeditions_list
+    except Exception as e:
+        print(f"Erreur lors de la récupération des expéditions du jour: {e}")
+        return []
+
+def get_all_colis():
+    """Récupère tous les colis avec infos zone, réception, etc."""
+    try:
+        conn = psycopg2.connect(**PG_CONN)
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT 
+                c.id_colis,
+                c.id_zo_stock,
+                c.id_reception,
+                c.dimension,
+                c.poids,
+                c.emplacement,
+                z.id_entrepot,
+                z.id_cellule,
+                z.e1, z.e2, z.e3,
+                r.date_reception
+            FROM sge_cre.colis c
+            LEFT JOIN sge_cre.zone_stockage z ON c.id_zo_stock = z.id_zo_stock
+            LEFT JOIN sge_cre.receptions r ON c.id_reception = r.id_reception
+            ORDER BY c.id_colis
+        ''')
+        colis = cursor.fetchall()
+        conn.close()
+        colis_list = []
+        for c in colis:
+            colis_list.append({
+                'id': c[0],
+                'zone_stockage': c[1],
+                'reception': c[2],
+                'dimension': c[3],
+                'poids': c[4],
+                'emplacement': c[5],
+                'entrepot': c[6],
+                'cellule': c[7],
+                'zone_e1': c[8],
+                'zone_e2': c[9],
+                'zone_e3': c[10],
+                'date_reception': c[11]
+            })
+        return colis_list
+    except Exception as e:
+        print(f"Erreur lors de la récupération des colis: {e}")
+        return []
+
+def get_mouvements_7_jours():
+    """Retourne une liste du nombre de mouvements par jour sur les 7 derniers jours (du plus ancien au plus récent)."""
+    conn = psycopg2.connect(**PG_CONN)
+    cursor = conn.cursor()
+    # Générer les 7 derniers jours
+    jours = [(datetime.date.today() - datetime.timedelta(days=i)) for i in range(6, -1, -1)]
+    result = []
+    for jour in jours:
+        cursor.execute("""
+            SELECT COUNT(*) FROM sge_cre.mouvements WHERE date(date_mouvement) = %s
+        """, (jour,))
+        count = cursor.fetchone()[0]
+        result.append(count)
+    conn.close()
+    return result
+
+def get_repartition_zones():
+    """Retourne un dict {zone: nombre_de_produits} pour la répartition des produits par zone."""
+    conn = psycopg2.connect(**PG_CONN)
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT zone_stockage, COUNT(*) FROM sge_cre.produits GROUP BY zone_stockage
+    """)
+    data = cursor.fetchall()
+    conn.close()
+    return {row[0] if row[0] else 'Inconnu': row[1] for row in data}
+
+def get_cellules_stats():
+    """Retourne (nb_cellules_occupees, nb_cellules_total)"""
+    conn = psycopg2.connect(**PG_CONN)
+    cursor = conn.cursor()
+    # Nombre total de cellules
+    cursor.execute("SELECT COUNT(*) FROM sge_cre.cellules")
+    total = cursor.fetchone()[0]
+    # Nombre de cellules occupées (présentes dans zone_stockage)
+    cursor.execute("SELECT COUNT(DISTINCT id_cellule) FROM sge_cre.zone_stockage")
+    occupees = cursor.fetchone()[0]
+    conn.close()
+    return occupees, total
+
+def get_commandes_en_cours():
+    """Retourne le nombre de commandes en cours (statut = 'en_cours' ou 'en_attente') dans commandes_achats et commandes_vends"""
+    conn = psycopg2.connect(**PG_CONN)
+    cursor = conn.cursor()
+    # Commandes achats
+    cursor.execute("SELECT COUNT(*) FROM sge_cre.commandes_achats WHERE statut IN ('en_cours', 'en_attente')")
+    achats = cursor.fetchone()[0]
+    # Commandes ventes
+    cursor.execute("SELECT COUNT(*) FROM sge_cre.commandes_vends WHERE statut IN ('en_cours', 'en_attente')")
+    vends = cursor.fetchone()[0]
+    conn.close()
+    return achats + vends
+
+def get_recent_activity(limit=10):
+    """Retourne les derniers mouvements (activité récente) pour le dashboard."""
+    conn = psycopg2.connect(**PG_CONN)
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT type, produit_nom, quantite, responsable, date_mouvement, commentaire
+        FROM sge_cre.mouvements
+        ORDER BY date_mouvement DESC
+        LIMIT %s
+    """, (limit,))
+    rows = cursor.fetchall()
+    conn.close()
+    activity = []
+    for row in rows:
+        type_mvt, produit, quantite, responsable, date_mvt, commentaire = row
+        # Mapping pour l'icône et la couleur
+        if type_mvt == 'Entrée':
+            icon = '📥'
+            color = '#3B82F6'
+        elif type_mvt == 'Sortie':
+            icon = '🚚'
+            color = '#10B981'
+        else:
+            icon = '✏️'
+            color = '#F59E0B'
+        # Format date
+        if isinstance(date_mvt, str):
+            time_str = date_mvt
+        else:
+            time_str = date_mvt.strftime('%d/%m/%Y %H:%M')
+        activity.append({
+            'icon': icon,
+            'user': responsable,
+            'action': f"{type_mvt.lower()} {quantite} x {produit}",
+            'time': time_str,
+            'color': color,
+            'type': type_mvt
+        })
+    return activity
+
+def get_all_zones():
+    """Retourne la liste des zones de stockage avec cellules et statuts pour l'affichage temps réel de l'entrepôt."""
+    conn = psycopg2.connect(**PG_CONN)
+    cursor = conn.cursor()
+    # Récupérer toutes les zones de stockage
+    cursor.execute('''
+        SELECT z.id_entrepot, z.e1, z.e2, z.e3, z.id_cellule, c.longueur, c.largeur, c.hauteur, c.masse_maximale
+        FROM sge_cre.zone_stockage z
+        JOIN sge_cre.cellules c ON z.id_cellule = c.id_cellule
+        ORDER BY z.e1, z.e2, z.e3, z.id_cellule
+    ''')
+    rows = cursor.fetchall()
+    # Récupérer les cellules occupées (présence de colis)
+    cursor.execute('SELECT DISTINCT id_cellule FROM sge_cre.zone_stockage WHERE id_zo_stock IN (SELECT id_zo_stock FROM sge_cre.colis)')
+    occupees = set(r[0] for r in cursor.fetchall())
+    # Pour la maintenance, on suppose qu'il y a un champ ou une logique à adapter (ici, aucune cellule en maintenance)
+    zones_dict = {}
+    for row in rows:
+        id_entrepot, e1, e2, e3, id_cellule, longueur, largeur, hauteur, masse_maximale = row
+        zone_key = f"{e1}"
+        if zone_key not in zones_dict:
+            zones_dict[zone_key] = {
+                'name': f"{e1}",
+                'desc': f"{e1} - {e2} - {e3}",
+                'pct': 0,  # Calculé plus bas
+                'cells': [],
+                'statuses': []
+            }
+        zones_dict[zone_key]['cells'].append(id_cellule)
+        if id_cellule in occupees:
+            zones_dict[zone_key]['statuses'].append('occupied')
+        else:
+            zones_dict[zone_key]['statuses'].append('free')
+    # Calcul du pourcentage d'occupation par zone
+    for zone in zones_dict.values():
+        total = len(zone['cells'])
+        occ = sum(1 for s in zone['statuses'] if s == 'occupied')
+        zone['pct'] = int((occ / total) * 100) if total > 0 else 0
+        zone['desc'] = f"{zone['name']} - {occ}/{total} occupées"
+    conn.close()
+    return list(zones_dict.values())
+
+def add_cellule(cell_name, zone_name):
+    """Ajoute une nouvelle cellule et la zone de stockage associée dans la base."""
+    conn = psycopg2.connect(**PG_CONN)
+    cursor = conn.cursor()
+    # Insérer la cellule (dimensions par défaut, à adapter si besoin)
+    try:
+        cursor.execute("""
+            INSERT INTO sge_cre.cellules (id_cellule, longueur, largeur, hauteur, masse_maximale)
+            VALUES (%s, %s, %s, %s, %s)
+        """, (cell_name, 100.0, 100.0, 100.0, 50.0))
+    except Exception as e:
+        print(f"Cellule déjà existante ou erreur: {e}")
+    # Insérer la zone de stockage (e1=zone_name, e2/e3 valeurs par défaut)
+    try:
+        cursor.execute("""
+            INSERT INTO sge_cre.zone_stockage (id_entrepot, id_cellule, e1, e2, e3)
+            VALUES (%s, %s, %s, %s, %s)
+        """, ("ENT001", cell_name, zone_name, "Rayon 1", "Étage 1"))
+    except Exception as e:
+        print(f"Zone de stockage déjà existante ou erreur: {e}")
+    conn.commit()
+    conn.close()
+
+def get_all_zone_names():
+    """Retourne la liste des noms de zones (e1) distincts dans la table zone_stockage."""
+    conn = psycopg2.connect(**PG_CONN)
+    cursor = conn.cursor()
+    cursor.execute('SELECT DISTINCT e1 FROM sge_cre.zone_stockage ORDER BY e1')
+    zones = [row[0] for row in cursor.fetchall()]
+    conn.close()
+    return zones
+
+def get_cellules_stats_detail():
+    """Retourne (total, occupees, libres, maintenance) selon la logique d'affichage (statut par cellule)."""
+    conn = psycopg2.connect(**PG_CONN)
+    cursor = conn.cursor()
+    # Récupérer toutes les cellules de zone_stockage
+    cursor.execute('SELECT id_cellule FROM sge_cre.zone_stockage')
+    all_cells = [r[0] for r in cursor.fetchall()]
+    total = len(all_cells)
+    # Récupérer les cellules occupées (présence de colis)
+    cursor.execute('SELECT DISTINCT id_cellule FROM sge_cre.zone_stockage WHERE id_zo_stock IN (SELECT id_zo_stock FROM sge_cre.colis)')
+    occupees = set(r[0] for r in cursor.fetchall())
+    # Pour la maintenance, on suppose aucune cellule en maintenance (à adapter si besoin)
+    libres = [c for c in all_cells if c not in occupees]
+    maintenance = 0
+    conn.close()
+    return total, len(occupees), len(libres), maintenance
+
+def get_reception_stats():
+    """Retourne (colis_en_attente, capacite_max, occupation_pct) pour la zone de réception."""
+    conn = psycopg2.connect(**PG_CONN)
+    cursor = conn.cursor()
+    # Nombre de colis en attente (statut en_cours ou en_attente dans receptions)
+    cursor.execute("SELECT COUNT(*) FROM sge_cre.colis c JOIN sge_cre.receptions r ON c.id_reception = r.id_reception WHERE r.statut IN ('en_cours', 'en_attente')")
+    colis_en_attente = cursor.fetchone()[0]
+    # Capacité maximale (à adapter si champ spécifique, ici valeur fixe 50)
+    capacite_max = 50
+    # Occupation = (colis en attente / capacité max)
+    occupation_pct = int((colis_en_attente / capacite_max) * 100) if capacite_max else 0
+    conn.close()
+    return colis_en_attente, capacite_max, occupation_pct
+
+def get_total_products():
+    conn = psycopg2.connect(**PG_CONN)
+    cursor = conn.cursor()
+    cursor.execute('SELECT COUNT(*) FROM sge_cre.produits')
+    total = cursor.fetchone()[0]
+    conn.close()
+    return total
+
+def get_lots_actifs():
+    conn = psycopg2.connect(**PG_CONN)
+    cursor = conn.cursor()
+    cursor.execute('SELECT COUNT(*) FROM sge_cre.lots')
+    total = cursor.fetchone()[0]
+    conn.close()
+    return total
+
+def get_stock_critique():
+    conn = psycopg2.connect(**PG_CONN)
+    cursor = conn.cursor()
+    cursor.execute('SELECT COUNT(*) FROM sge_cre.produits WHERE stock <= alert')
+    total = cursor.fetchone()[0]
+    conn.close()
+    return total
+
+def get_valeur_stock():
+    conn = psycopg2.connect(**PG_CONN)
+    cursor = conn.cursor()
+    # On suppose qu'il y a un champ prix_unitaire dans produits, sinon retourne 0
+    try:
+        cursor.execute('SELECT SUM(stock * prix_unitaire) FROM sge_cre.produits')
+        total = cursor.fetchone()[0]
+        if total is None:
+            total = 0
+    except Exception:
+        total = 0
+    conn.close()
+    return total
+
 if __name__ == "__main__":
-    # init_database()  # Désactivé pour éviter les erreurs d'encodage
+    init_database()  # Désactivé pour éviter les erreurs d'encodage
     pass 

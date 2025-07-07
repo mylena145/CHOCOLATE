@@ -1,39 +1,36 @@
 import customtkinter as ctk
 from stock_management_page import SidebarFrame
 from responsive_utils import ThemeToggleButton
+from tkinter import messagebox
 
 class ReceptionFrame(ctk.CTkFrame):
     def __init__(self, master, user_info=None):
-        super().__init__(master, fg_color="white")
-        self.pack(fill="both", expand=True)
-        if user_info is None:
-            user_info = {
+        try:
+            super().__init__(master, fg_color="white")
+            self.pack(fill="both", expand=True)
+            self.master = master
+            self.user_info = user_info if user_info is not None else {
                 'prenom': 'Utilisateur',
                 'nom': 'Test',
                 'role': 'Admin',
                 'email': 'test@example.com',
                 'matricule': '12345'
             }
-        self.sidebar = SidebarFrame(self, master)
-        self.sidebar.pack(side="left", fill="y")
-        self.sidebar.set_active_button("Réception")
-        
-        # Lier le redimensionnement
-        self.bind("<Configure>", self._on_frame_resize)
-        
-        self.main_content = ctk.CTkFrame(self, fg_color="white")
-        self.main_content.pack(side="right", fill="both", expand=True)
-        self.active_filter = "Tous"
-        
-        # Initialisation des variables de pagination
-        self.current_page = 0
-        self.items_per_page = 10
-        
-        self._build_topbar()
-        self.create_widgets()
-        
-        # Lier le redimensionnement
-        self.bind("<Configure>", self._on_frame_resize)
+            self.previous_page = getattr(master, 'last_page', None) if hasattr(master, 'last_page') else None
+            self.sidebar = SidebarFrame(self, master)
+            self.sidebar.pack(side="left", fill="y")
+            self.sidebar.set_active_button("Réception")
+            self.bind("<Configure>", self._on_frame_resize)
+            self.main_content = ctk.CTkFrame(self, fg_color="white")
+            self.main_content.pack(side="right", fill="both", expand=True)
+            self.active_filter = "Tous"
+            self.current_page = 0
+            self.items_per_page = 10
+            self._build_topbar()
+            self.create_widgets()
+            self.bind("<Configure>", self._on_frame_resize)
+        except Exception as e:
+            self._show_error(str(e))
 
     def apply_theme(self, theme):
         """Applique le thème à la page de réception"""
@@ -78,6 +75,23 @@ class ReceptionFrame(ctk.CTkFrame):
             print(f"Erreur lors de l'application du thème à la page Réception: {e}")
 
     def create_widgets(self):
+        # Ajout du bouton retour intelligent en haut à gauche
+        topbar = ctk.CTkFrame(self.main_content, fg_color="transparent")
+        topbar.pack(fill="x", pady=(10, 0))
+        btn_retour = ctk.CTkButton(
+            topbar,
+            text="← Retour",
+            width=110,
+            height=36,
+            fg_color="#2563eb",
+            hover_color="#1d4ed8",
+            text_color="white",
+            font=ctk.CTkFont(size=15, weight="bold"),
+            corner_radius=8,
+            command=self._go_back
+        )
+        btn_retour.pack(side="left", padx=18, pady=5)
+        
         # HEADER (fixe)
         header = ctk.CTkFrame(self.main_content, fg_color="white")
         header.pack(fill="x", pady=(0, 10), padx=0)
@@ -614,12 +628,31 @@ class ReceptionFrame(ctk.CTkFrame):
         subtitle.grid(row=1, column=0, sticky="w")
         
         # Bouton de thème
-        from responsive_utils import ThemeToggleButton
-        self.theme_button = ThemeToggleButton(topbar, self.parent)
+        self.theme_button = ThemeToggleButton(topbar, self.master)
         self.theme_button.grid(row=0, column=1, rowspan=2, sticky="e", padx=(0,20))
         
         btn = ctk.CTkButton(topbar, text="📦 Nouvelle Réception", fg_color="#3b82f6", hover_color="#2563eb", text_color="white", corner_radius=8, font=ctk.CTkFont(size=14, weight="bold"), width=160, height=36, command=self._open_reception_modal)
         btn.grid(row=0, column=2, rowspan=2, sticky="e", padx=(0,20))
+
+    def _go_back(self):
+        """Retourne à la page précédente si possible, sinon dashboard"""
+        if hasattr(self.master, 'show_dashboard') and self.previous_page is None:
+            self.master.show_dashboard(self.user_info)
+        elif hasattr(self.master, 'show_' + str(self.previous_page)):
+            getattr(self.master, 'show_' + str(self.previous_page))()
+        elif hasattr(self.master, 'show_dashboard'):
+            self.master.show_dashboard(self.user_info)
+        else:
+            messagebox.showinfo("Retour", "Impossible de revenir en arrière. Redémarrez l'application.")
+
+    def _show_error(self, message):
+        for widget in self.winfo_children():
+            widget.destroy()
+        error_frame = ctk.CTkFrame(self, fg_color="#fee2e2", corner_radius=12)
+        error_frame.pack(fill="both", expand=True, padx=60, pady=60)
+        ctk.CTkLabel(error_frame, text="❌ Erreur lors de l'affichage de la page réception", font=ctk.CTkFont(size=20, weight="bold"), text_color="#b91c1c").pack(pady=(30, 10))
+        ctk.CTkLabel(error_frame, text=message, font=ctk.CTkFont(size=15), text_color="#b91c1c").pack(pady=(0, 20))
+        ctk.CTkButton(error_frame, text="🏠 Retour à l'accueil", fg_color="#2563eb", text_color="white", font=ctk.CTkFont(size=15, weight="bold"), command=self._go_back).pack(pady=10)
 
 class AddReceptionPopup(ctk.CTkToplevel):
     def __init__(self, master=None):

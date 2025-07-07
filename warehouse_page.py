@@ -1,5 +1,7 @@
 import customtkinter as ctk
 from stock_management_page import SidebarFrame
+import database
+import threading
 
 class WarehouseFrame(ctk.CTkFrame):
     def __init__(self, master, user_info=None):
@@ -13,29 +15,32 @@ class WarehouseFrame(ctk.CTkFrame):
         self.main.pack(side="right", fill="both", expand=True)
         self._create_header()
         self._create_summary()
-        body = ctk.CTkScrollableFrame(self.main, fg_color="white", corner_radius=0)
-        body.pack(fill="both", expand=True, padx=20, pady=10)
-        body.grid_columnconfigure(0, weight=1)
-        body.grid_columnconfigure(1, weight=1)
-        zones = [
-            {'name':'Zone E0','desc':'Matériel informatique - 85/100','pct':85,
-             'cells':['A1','A2','A3','A4','B1','B2','B3','B4','C1','C2','C3','C4'],
-             'statuses':['occupied','occupied','free','occupied','occupied','free','occupied','free','occupied','occupied','maintenance','free']},
-            {'name':'Zone E1','desc':'Électronique - 92/120','pct':77,
-             'cells':['A1','A2','A3','A4','B1','B2','B3','B4','C1','C2','C3','C4'],
-             'statuses':['free','occupied','occupied','occupied','occupied','free','occupied','occupied','occupied','free','occupied','occupied']},
-            {'name':'Zone E2','desc':'Mobilier - 67/110','pct':61,
-             'cells':['A1','A2','A3','A4','B1','B2','B3','B4','C1','C2','C3','C4'],
-             'statuses':['occupied','free','occupied','free','occupied','occupied','free','occupied','occupied','free','occupied','free']},
-            {'name':'Zone E3','desc':'Emballage - 98/120','pct':82,
-             'cells':['A1','A2','A3','A4','B1','B2','B3','B4','C1','C2','C3','C4'],
-             'statuses':['occupied','occupied','occupied','occupied','occupied','occupied','occupied','occupied','free','occupied','free','occupied']},
-        ]
+        self.body = ctk.CTkScrollableFrame(self.main, fg_color="white", corner_radius=0)
+        self.body.pack(fill="both", expand=True, padx=20, pady=10)
+        self.body.grid_columnconfigure(0, weight=1)
+        self.body.grid_columnconfigure(1, weight=1)
+        self.zone_cards = []
+        self._refresh_zones()
+        self._create_reception_card(self.body).grid(row=10, column=0, columnspan=2, pady=10, sticky="ew")
+        self.after(1000, self._refresh_zones)
+
+    def _refresh_zones(self):
+        # Efface les anciennes cartes
+        for card in self.zone_cards:
+            card.destroy()
+        self.zone_cards = []
+        try:
+            zones = database.get_all_zones()  # À adapter selon ta fonction
+        except Exception:
+            zones = []
         for idx, zone in enumerate(zones):
             col = idx % 2
             row = idx // 2
-            self._create_zone_card(body, zone).grid(row=row, column=col, padx=10, pady=10, sticky="nsew")
-        self._create_reception_card(body).grid(row=(len(zones)//2)+1, column=0, columnspan=2, pady=10, sticky="ew")
+            card = self._create_zone_card(self.body, zone)
+            card.grid(row=row, column=col, padx=10, pady=10, sticky="nsew")
+            self.zone_cards.append(card)
+        # Rafraîchit toutes les secondes
+        self.after(1000, self._refresh_zones)
 
     def _create_header(self):
         hdr = ctk.CTkFrame(self.main, fg_color="#F3F4F6")
@@ -65,17 +70,18 @@ class WarehouseFrame(ctk.CTkFrame):
         ).pack(side="left", padx=(10,0))
 
     def _create_summary(self):
-        frame = ctk.CTkFrame(self.main, fg_color="white")
-        frame.pack(fill="x", padx=20, pady=(0,20))
-        stats = [
-            ("Total Cellules","450","4 zones actives","🗔","#14B8A6"),
-            ("Cellules Occupées","342","76% occupation","✅","#10B981"),
-            ("Cellules Libres","108","24% disponible","◻️","#EF4444"),
-            ("Maintenance","0","Toutes opérationnelles","🛠️","#6B7280"),
-        ]
-        for title, val, sub, ic, color in stats:
+        self.summary_frame = ctk.CTkFrame(self.main, fg_color="white")
+        self.summary_frame.pack(fill="x", padx=20, pady=(0,20))
+        self.summary_labels = []
+        # Création initiale des widgets
+        for i, (title, val, sub, ic, color) in enumerate([
+            ("Total Cellules", "0", "0 cellules", "🗔", "#14B8A6"),
+            ("Cellules Occupées", "0", "0% occupation", "✅", "#10B981"),
+            ("Cellules Libres", "0", "0% disponible", "◻️", "#EF4444"),
+            ("Maintenance", "0", "Toutes opérationnelles", "🛠️", "#6B7280"),
+        ]):
             card = ctk.CTkFrame(
-                frame, fg_color="white",
+                self.summary_frame, fg_color="white",
                 border_width=1, border_color="#E5E7EB",
                 corner_radius=10
             )
@@ -89,18 +95,38 @@ class WarehouseFrame(ctk.CTkFrame):
                 circ, text=ic,
                 font=ctk.CTkFont(size=20), text_color="white"
             ).grid(row=0, column=0, sticky="nsew")
-            ctk.CTkLabel(
+            label_title = ctk.CTkLabel(
                 card, text=title,
                 font=ctk.CTkFont(size=14), text_color="#374151"
-            ).pack(pady=(8,0))
-            ctk.CTkLabel(
+            )
+            label_title.pack(pady=(8,0))
+            label_val = ctk.CTkLabel(
                 card, text=val,
                 font=ctk.CTkFont(size=28, weight="bold"), text_color=color
-            ).pack()
-            ctk.CTkLabel(
+            )
+            label_val.pack()
+            label_sub = ctk.CTkLabel(
                 card, text=sub,
                 font=ctk.CTkFont(size=12), text_color="#6B7280"
-            ).pack(pady=(0,10))
+            )
+            label_sub.pack(pady=(0,10))
+            self.summary_labels.append((label_val, label_sub))
+        self._refresh_summary()
+
+    def _refresh_summary(self):
+        import database
+        total, occupees, libres, maintenance = database.get_cellules_stats_detail()
+        vals = [
+            (str(total), f"{total} cellules"),
+            (str(occupees), f"{int((occupees/total)*100) if total else 0}% occupation"),
+            (str(libres), f"{int((libres/total)*100) if total else 0}% disponible"),
+            (str(maintenance), "Toutes opérationnelles"),
+        ]
+        for (label_val, label_sub), (v, s) in zip(self.summary_labels, vals):
+            label_val.configure(text=v)
+            label_sub.configure(text=s)
+        # Rafraîchit toutes les secondes
+        self.after(1000, self._refresh_summary)
 
     def _create_zone_card(self, parent, zone):
         card = ctk.CTkFrame(
@@ -157,37 +183,52 @@ class WarehouseFrame(ctk.CTkFrame):
         return card
 
     def _create_reception_card(self, parent):
-        card = ctk.CTkFrame(
+        self.reception_card = ctk.CTkFrame(
             parent, fg_color="white",
             border_width=1, border_color="#E5E7EB",
             corner_radius=10
         )
-        hdr = ctk.CTkFrame(card, fg_color="#2563EB", corner_radius=10)
-        hdr.pack(fill="x")
-        hdr.grid_columnconfigure(0, weight=1)
+        # Header
+        self.reception_hdr = ctk.CTkFrame(self.reception_card, fg_color="#2563EB", corner_radius=10)
+        self.reception_hdr.pack(fill="x")
+        self.reception_hdr.grid_columnconfigure(0, weight=1)
         ctk.CTkLabel(
-            hdr, text="Zone de Réception",
+            self.reception_hdr, text="Zone de Réception",
             font=ctk.CTkFont(size=16, weight="bold"), text_color="white"
         ).grid(row=0, column=0, padx=10, pady=8, sticky="w")
-        status = ctk.CTkLabel(
-            hdr, text="Opérationnelle",
+        self.reception_status = ctk.CTkLabel(
+            self.reception_hdr, text="Opérationnelle",
             font=ctk.CTkFont(size=12, weight="bold"), fg_color="#10B981",
             corner_radius=8, text_color="white"
         )
-        status.grid(row=0, column=1, padx=10, pady=8, sticky="e")
-        infos = [("Colis en attente","12"),("Capacité maximale","50"),("Occupation","24%")]
-        for txt,val in infos:
-            f = ctk.CTkFrame(card, fg_color="#F3F4F6", corner_radius=8)
+        self.reception_status.grid(row=0, column=1, padx=10, pady=8, sticky="e")
+        # Infos dynamiques
+        self.reception_infos = []
+        for i, (txt, val) in enumerate([("Colis en attente", "0"), ("Capacité maximale", "0"), ("Occupation", "0%")]):
+            f = ctk.CTkFrame(self.reception_card, fg_color="#F3F4F6", corner_radius=8)
             f.pack(fill="x", padx=10, pady=6)
-            ctk.CTkLabel(
+            label_txt = ctk.CTkLabel(
                 f, text=txt,
                 font=ctk.CTkFont(size=12), text_color="#374151"
-            ).pack(side="left", padx=10, pady=8)
-            ctk.CTkLabel(
+            )
+            label_txt.pack(side="left", padx=10, pady=8)
+            label_val = ctk.CTkLabel(
                 f, text=val,
                 font=ctk.CTkFont(size=12, weight="bold"), text_color="#212224"
-            ).pack(side="right", padx=10, pady=8)
-        return card
+            )
+            label_val.pack(side="right", padx=10, pady=8)
+            self.reception_infos.append(label_val)
+        self._refresh_reception_card()
+        return self.reception_card
+
+    def _refresh_reception_card(self):
+        import database
+        colis_en_attente, capacite_max, occupation_pct = database.get_reception_stats()
+        values = [str(colis_en_attente), str(capacite_max), f"{occupation_pct}%"]
+        for label, val in zip(self.reception_infos, values):
+            label.configure(text=val)
+        # Rafraîchit toutes les secondes
+        self.after(1000, self._refresh_reception_card)
 
     def _open_new_cell_popup(self):
         """Ouvre une fenêtre pop-up scrollable pour ajouter une nouvelle cellule."""
@@ -238,16 +279,20 @@ class WarehouseFrame(ctk.CTkFrame):
             font=ctk.CTkFont(size=12)
         ).pack(anchor="w")
         
-        # Champ Zone
+        # Champ Zone (dynamique)
         ctk.CTkLabel(
             form_frame,
             text="Zone:",
             font=ctk.CTkFont(size=14)
         ).pack(anchor="w", pady=(10, 5))
         
+        import database
+        zone_names = database.get_all_zone_names()
+        if not zone_names:
+            zone_names = ["Aucune zone"]
         self.zone_optionmenu = ctk.CTkOptionMenu(
             form_frame,
-            values=["Zone E0", "Zone E1", "Zone E2", "Zone E3"],
+            values=zone_names,
             width=350
         )
         self.zone_optionmenu.pack()
@@ -317,14 +362,18 @@ class WarehouseFrame(ctk.CTkFrame):
         """Valide et traite la création d'une nouvelle cellule."""
         if not self._validate_form():
             return  # Ne pas fermer si formulaire invalide
-            
         # Récupération des valeurs
         cell_name = self.cell_name_entry.get().strip()
         zone = self.zone_optionmenu.get()
-        
+        import database
+        try:
+            database.add_cellule(cell_name, zone)
+        except Exception as e:
+            # Affiche une popup d'erreur détaillée
+            self._show_error_message(str(e))
+            return
         # Fermeture du popup
         popup.destroy()
-        
         # Affichage du message de succès
         self._show_success_message(cell_name, zone)
 
@@ -432,6 +481,34 @@ class WarehouseFrame(ctk.CTkFrame):
         x = self.master.winfo_x() + (self.master.winfo_width() // 2) - (success.winfo_width() // 2)
         y = self.master.winfo_y() + (self.master.winfo_height() // 2) - (success.winfo_height() // 2)
         success.geometry(f"+{x}+{y}")
+
+    def _show_error_message(self, error_msg):
+        """Affiche une popup d'erreur lors de l'ajout d'une cellule."""
+        err = ctk.CTkToplevel(self)
+        err.title("Erreur d'ajout de cellule")
+        err.geometry("420x200")
+        ctk.CTkLabel(
+            err,
+            text="❌ Erreur lors de l'ajout de la cellule",
+            font=ctk.CTkFont(size=16, weight="bold"),
+            text_color="#ef4444"
+        ).pack(pady=(28, 10), padx=20)
+        ctk.CTkLabel(
+            err,
+            text=error_msg,
+            font=ctk.CTkFont(size=13),
+            text_color="#6b7280"
+        ).pack(pady=(0, 18), padx=20)
+        ctk.CTkButton(
+            err,
+            text="Fermer",
+            fg_color="#90A4AE",
+            hover_color="#78909C",
+            text_color="white",
+            corner_radius=8,
+            font=ctk.CTkFont(size=14),
+            command=err.destroy
+        ).pack(pady=(0, 18))
 
     def apply_theme(self, theme):
         """Applique le thème à la page des entrepôts"""

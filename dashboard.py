@@ -8,6 +8,8 @@ import importlib
 from sidebar import SidebarFrame
 from CTkToolTip import CTkToolTip
 from responsive_utils import ThemeToggleButton
+import database
+import locale
 
 # Thème clair moderne avec accents colorés
 ctk.set_appearance_mode('Light')
@@ -64,6 +66,9 @@ class DashboardFrame(ctk.CTkFrame):
 
         # Lier le redimensionnement
         self.bind("<Configure>", self._on_frame_resize)
+
+        self.refresh_interval = 3000  # 3 secondes
+        self.refresh_data()  # Démarre le rafraîchissement automatique
 
     def _set_alert_products_sort(self, key):
         """Définit la clé de tri pour les produits en alerte et met à jour l'affichage."""
@@ -127,11 +132,20 @@ class DashboardFrame(ctk.CTkFrame):
         for widget in self.activity_list_container.winfo_children():
             widget.destroy()
 
+        # Adapter le filtre pour la correspondance
+        def filtre_type(item_type):
+            if item_type == 'Entrée':
+                return 'Réception'
+            elif item_type == 'Sortie':
+                return 'Expédition'
+            else:
+                return 'Modification'
+
         # Filtrer les données
         if self.activity_filter == 'Tous':
             filtered_activity = self.activity_data
         else:
-            filtered_activity = [item for item in self.activity_data if item['type'] == self.activity_filter]
+            filtered_activity = [item for item in self.activity_data if filtre_type(item['type']) == self.activity_filter]
 
         # Redessiner la liste
         if not filtered_activity:
@@ -140,14 +154,11 @@ class DashboardFrame(ctk.CTkFrame):
 
         for item in filtered_activity:
             item_frame = ctk.CTkFrame(self.activity_list_container, fg_color='#F8F9FA', corner_radius=8)
-            item_frame.pack(fill='x', pady=4)
-            
+            item_frame.pack(fill='x', pady=5)
             content_frame = ctk.CTkFrame(item_frame, fg_color='transparent')
             content_frame.pack(fill='x', padx=15, pady=10)
-            
             icon_label = ctk.CTkLabel(content_frame, text=item['icon'], font=ctk.CTkFont(size=20), text_color=item['color'])
             icon_label.pack(side='left')
-            
             ctk.CTkLabel(content_frame, text=f'{item["user"]} {item["action"]}', font=ctk.CTkFont(size=14), text_color='#333333').pack(side='left', padx=(10,0))
             ctk.CTkLabel(content_frame, text=item['time'], font=ctk.CTkFont(size=13), text_color='#999999').pack(side='right')
 
@@ -227,9 +238,10 @@ class DashboardFrame(ctk.CTkFrame):
         search_button.bind('<Leave>', on_search_hover_leave)
         
         # Bouton notifications
-        nf = ctk.CTkButton(topbar, text='🔔 5', width=100, height=40, corner_radius=12, fg_color='#FFE082', text_color='#333333', font=ctk.CTkFont(size=14, weight='bold'))
-        nf.pack(side='right', padx=10, pady=10)
-        CTkToolTip(nf, message="Afficher les 5 notifications et alertes les plus récentes.", corner_radius=8, border_width=1)
+        self.notif_count = ctk.StringVar(value="0")
+        self.nf_btn = ctk.CTkButton(topbar, textvariable=self.notif_count, width=100, height=40, corner_radius=12, fg_color='#FFE082', text_color='#333333', font=ctk.CTkFont(size=14, weight='bold'), command=self._show_notifications_popup)
+        self.nf_btn.pack(side='right', padx=10, pady=10)
+        CTkToolTip(self.nf_btn, message="Afficher les notifications et alertes les plus récentes.", corner_radius=8, border_width=1)
         
         # Bind pour la recherche avec Entrée
         self.search_entry.bind('<Return>', lambda event: self._perform_search())
@@ -303,23 +315,22 @@ class DashboardFrame(ctk.CTkFrame):
     def _build_stats(self):
         frame = ctk.CTkFrame(self.main, fg_color='white')
         frame.pack(fill='x', pady=(0,25))
-        
-        # Données des cartes avec emojis et informations supplémentaires
+        self.stats_labels = {}  # Ajouté pour stocker les labels dynamiques
         cards_data = [
             {
                 'icon': '📦',
                 'title': 'Produits',
-                'value': '1 247',
+                'key': 'produits',
                 'subtitle': '+12% ce mois',
                 'color': '#10B981',
                 'bg_color': '#ECFDF5',
                 'border_color': '#D1FAE5',
-                'tooltip': 'Nombre total de références de produits uniques dans l\'entrepôt.'
+                'tooltip': "Nombre total de références de produits uniques dans l'entrepôt."
             },
             {
                 'icon': '🏢',
                 'title': 'Cellules',
-                'value': '342/450',
+                'key': 'cellules',
                 'subtitle': '76% occupées',
                 'color': '#F59E0B',
                 'bg_color': '#FFFBEB',
@@ -329,7 +340,7 @@ class DashboardFrame(ctk.CTkFrame):
             {
                 'icon': '📋',
                 'title': 'Commandes',
-                'value': '28',
+                'key': 'commandes',
                 'subtitle': 'En cours',
                 'color': '#3B82F6',
                 'bg_color': '#EFF6FF',
@@ -339,7 +350,7 @@ class DashboardFrame(ctk.CTkFrame):
             {
                 'icon': '🚨',
                 'title': 'Alertes',
-                'value': '5',
+                'key': 'alertes',
                 'subtitle': 'À traiter',
                 'color': '#EF4444',
                 'bg_color': '#FEF2F2',
@@ -347,9 +358,7 @@ class DashboardFrame(ctk.CTkFrame):
                 'tooltip': 'Produits nécessitant une attention immédiate (stock bas, etc.).'
             }
         ]
-        
         for i, card in enumerate(cards_data):
-            # Carte principale avec design moderne
             card_frame = ctk.CTkFrame(
                 frame, 
                 fg_color=card['bg_color'], 
@@ -362,67 +371,55 @@ class DashboardFrame(ctk.CTkFrame):
             card_frame.grid(row=0, column=i, padx=15, pady=10)
             card_frame.grid_propagate(False)
             CTkToolTip(card_frame, message=card['tooltip'], corner_radius=8, border_width=1)
-            
-            # Contenu de la carte
             content_frame = ctk.CTkFrame(card_frame, fg_color='transparent')
             content_frame.pack(fill='both', expand=True, padx=20, pady=20)
-            
-            # Ligne supérieure avec icône et titre
             top_row = ctk.CTkFrame(content_frame, fg_color='transparent')
             top_row.pack(fill='x', pady=(0, 15))
-            
-            # Icône
             ctk.CTkLabel(
                 top_row, 
                 text=card['icon'], 
                 font=ctk.CTkFont(size=32), 
                 text_color=card['color']
             ).pack(side='left')
-            
-            # Titre
             ctk.CTkLabel(
                 top_row, 
                 text=card['title'], 
                 font=ctk.CTkFont(size=18, weight='bold'), 
                 text_color='#1F2937'
             ).pack(side='right', pady=10)
-            
-            # Valeur principale
-            ctk.CTkLabel(
+            # Label dynamique pour la valeur
+            value_label = ctk.CTkLabel(
                 content_frame, 
-                text=card['value'], 
+                text='...', 
                 font=ctk.CTkFont(size=36, weight='bold'), 
                 text_color=card['color']
-            ).pack(anchor='w', pady=(0, 8))
-            
-            # Sous-titre avec indicateur
+            )
+            value_label.pack(anchor='w', pady=(0, 8))
+            self.stats_labels[card['key']] = value_label
             subtitle_frame = ctk.CTkFrame(content_frame, fg_color='transparent')
             subtitle_frame.pack(fill='x')
-            
             ctk.CTkLabel(
                 subtitle_frame, 
                 text=card['subtitle'], 
                 font=ctk.CTkFont(size=14), 
                 text_color='#6B7280'
             ).pack(side='left')
-            
-            # Indicateur de tendance (pour les produits)
-            if i == 0:  # Produits
+            if i == 0:
                 trend_frame = ctk.CTkFrame(subtitle_frame, fg_color='#10B981', corner_radius=8, width=60, height=20)
                 trend_frame.pack(side='right')
                 trend_frame.pack_propagate(False)
                 ctk.CTkLabel(trend_frame, text='↗️ +12%', font=ctk.CTkFont(size=11, weight='bold'), text_color='white').pack(expand=True)
-            elif i == 1:  # Cellules
+            elif i == 1:
                 progress_frame = ctk.CTkFrame(subtitle_frame, fg_color='#E5E7EB', corner_radius=10, width=80, height=8)
                 progress_frame.pack(side='right', pady=5)
                 progress_bar = ctk.CTkFrame(progress_frame, fg_color='#F59E0B', corner_radius=10, width=60, height=8)
                 progress_bar.pack(side='left', padx=2, pady=2)
-            elif i == 2:  # Commandes
+            elif i == 2:
                 status_frame = ctk.CTkFrame(subtitle_frame, fg_color='#3B82F6', corner_radius=8, width=70, height=20)
                 status_frame.pack(side='right')
                 status_frame.pack_propagate(False)
                 ctk.CTkLabel(status_frame, text='⏳ En cours', font=ctk.CTkFont(size=11, weight='bold'), text_color='white').pack(expand=True)
-            elif i == 3:  # Alertes
+            elif i == 3:
                 priority_frame = ctk.CTkFrame(subtitle_frame, fg_color='#EF4444', corner_radius=8, width=70, height=20)
                 priority_frame.pack(side='right')
                 priority_frame.pack_propagate(False)
@@ -467,88 +464,118 @@ class DashboardFrame(ctk.CTkFrame):
         frame = ctk.CTkFrame(master, fg_color='white')
         frame.pack(fill='x', expand=True, pady=(0,25))
         ctk.CTkLabel(frame, text='Statistiques Visuelles', font=ctk.CTkFont(size=18, weight='bold'), text_color='#333333').pack(side='top', anchor='w', padx=15, pady=(0,15))
+        # Graphique 1 : activité 7 derniers jours
         ch1 = ctk.CTkFrame(frame, fg_color='#F5F5F5', corner_radius=12)
         ch1.pack(side='left', expand=True, fill='both', padx=12)
-        fig1 = Figure(figsize=(9,4), dpi=100)
-        ax1 = fig1.add_subplot(111)
-        ax1.plot([1,2,3,4,5,6,7],[50,60,55,70,65,75,80],marker='o')
-        ax1.set_title('Activité 7 derniers jours')
-        fig1.tight_layout()
-        canvas1 = FigureCanvasTkAgg(fig1, master=ch1)
-        canvas1.draw()
-        canvas1.get_tk_widget().pack(expand=True, fill='both', padx=10, pady=10)
+        self.fig1 = Figure(figsize=(9,4), dpi=100)
+        self.ax1 = self.fig1.add_subplot(111)
+        self.ax1.plot([1,2,3,4,5,6,7],[50,60,55,70,65,75,80],marker='o')
+        self.ax1.set_title('Activité 7 derniers jours')
+        self.fig1.tight_layout()
+        self.canvas1 = FigureCanvasTkAgg(self.fig1, master=ch1)
+        self.canvas1.draw()
+        self.canvas1.get_tk_widget().pack(expand=True, fill='both', padx=10, pady=10)
         ctk.CTkLabel(frame, text='Taux de Rotation des Stocks', font=ctk.CTkFont(size=14, weight='bold'), text_color='#666666').pack(pady=(0,10))
+        # Graphique 2 : répartition par zone
         ch2 = ctk.CTkFrame(frame, fg_color='#F5F5F5', corner_radius=12)
         ch2.pack(side='left', expand=True, fill='both', padx=12)
-        fig2 = Figure(figsize=(9,4), dpi=100)
-        ax2 = fig2.add_subplot(111)
-        ax2.pie([30,40,30], labels=['Zone A','Zone B','Zone C'], autopct='%1.1f%%')
-        ax2.axis('equal')
-        ax2.set_title('Répartition par zone')
-        fig2.tight_layout()
-        canvas2 = FigureCanvasTkAgg(fig2, master=ch2)
-        canvas2.draw()
-        canvas2.get_tk_widget().pack(expand=True, fill='both', padx=10, pady=10)
+        self.fig2 = Figure(figsize=(9,4), dpi=100)
+        self.ax2 = self.fig2.add_subplot(111)
+        self.ax2.pie([30,40,30], labels=['Zone A','Zone B','Zone C'], autopct='%1.1f%%')
+        self.ax2.axis('equal')
+        self.ax2.set_title('Répartition par zone')
+        self.fig2.tight_layout()
+        self.canvas2 = FigureCanvasTkAgg(self.fig2, master=ch2)
+        self.canvas2.draw()
+        self.canvas2.get_tk_widget().pack(expand=True, fill='both', padx=10, pady=10)
         ctk.CTkLabel(frame, text='Utilisation des Cellules', font=ctk.CTkFont(size=14, weight='bold'), text_color='#666666').pack(pady=(0,10))
-        canvas2 = FigureCanvasTkAgg(fig2, master=frame)
-        canvas2.draw()
-        canvas2.get_tk_widget().pack(side='left', fill='both', expand=True, padx=15)
+        # Pour compatibilité, garder une référence sur les données
+        self.charts_data = {
+            'activity': [50,60,55,70,65,75,80],
+            'zones': [30,40,30],
+            'zones_labels': ['Zone A','Zone B','Zone C']
+        }
+
+    def _update_charts_display(self):
+        """Met à jour dynamiquement les graphiques en temps réel."""
+        # Exemple : activité 7 derniers jours
+        if hasattr(self, 'ax1') and hasattr(self, 'charts_data'):
+            self.ax1.clear()
+            y = self.charts_data.get('activity', [0]*7)
+            self.ax1.plot(range(1,8), y, marker='o')
+            self.ax1.set_title('Activité 7 derniers jours')
+            self.fig1.tight_layout()
+            self.canvas1.draw()
+        # Exemple : répartition par zone
+        if hasattr(self, 'ax2') and hasattr(self, 'charts_data'):
+            self.ax2.clear()
+            sizes = self.charts_data.get('zones', [1,1,1])
+            labels = self.charts_data.get('zones_labels', ['Zone A','Zone B','Zone C'])
+            self.ax2.pie(sizes, labels=labels, autopct='%1.1f%%')
+            self.ax2.axis('equal')
+            self.ax2.set_title('Répartition par zone')
+            self.fig2.tight_layout()
+            self.canvas2.draw()
 
     def _build_tables(self, master):
         frame = ctk.CTkFrame(master, fg_color='white')
         frame.pack(fill='x', pady=(0,25))
         ctk.CTkLabel(frame, text='Produits en Alerte et Commandes Récentes', font=ctk.CTkFont(size=18, weight='bold'), text_color='#333333').pack(side='top', anchor='w', padx=15, pady=(0,15))
-        
         # --- Produits en Alerte ---
         subframe1 = ctk.CTkFrame(frame, fg_color='#FEF2F2', corner_radius=12, border_width=1, border_color='#FECACA')
         subframe1.pack(side='left', expand=True, fill='both', padx=12)
-
-        # Header avec titre et boutons de tri
         header_frame = ctk.CTkFrame(subframe1, fg_color="transparent")
         header_frame.pack(fill='x', padx=15, pady=(5,0))
-
         ctk.CTkLabel(header_frame, text='Produits en Alerte de Stock', font=ctk.CTkFont(size=14, weight='bold'), text_color='#D32F2F').pack(side='left')
-
         sort_buttons_frame = ctk.CTkFrame(header_frame, fg_color="transparent")
         sort_buttons_frame.pack(side='right')
-
         ctk.CTkLabel(sort_buttons_frame, text="Trier par:", font=ctk.CTkFont(size=12), text_color="#6B7280").pack(side='left', padx=(0,5))
-        
         self.sort_name_button = ctk.CTkButton(sort_buttons_frame, text="Nom", height=24, font=ctk.CTkFont(size=12), command=lambda: self._set_alert_products_sort('name'), border_color="#D1D5DB", hover_color="#E5E7EB")
         self.sort_name_button.pack(side='left')
         CTkToolTip(self.sort_name_button, message="Trier les produits par ordre alphabétique.")
-        
         self.sort_stock_button = ctk.CTkButton(sort_buttons_frame, text="Stock", height=24, font=ctk.CTkFont(size=12), command=lambda: self._set_alert_products_sort('stock'), border_color="#D1D5DB", hover_color="#E5E7EB")
         self.sort_stock_button.pack(side='left', padx=5)
         CTkToolTip(self.sort_stock_button, message="Trier les produits par stock disponible (du plus bas au plus élevé).")
-
-        # Conteneur pour la liste des produits
         self.alert_products_container = ctk.CTkFrame(subframe1, fg_color="transparent")
         self.alert_products_container.pack(fill='both', expand=True, padx=15, pady=(5,10))
-
         self._update_alert_products_display()
-
         # --- Dernières Commandes ---
         subframe2 = ctk.CTkFrame(frame, fg_color='#EFF6FF', corner_radius=12, border_width=1, border_color='#BFDBFE')
         subframe2.pack(side='left', expand=True, fill='both', padx=12)
         ctk.CTkLabel(subframe2, text='Dernières Commandes', font=ctk.CTkFont(size=14, weight='bold'), text_color='#3B82F6').pack(pady=5)
+        self.recent_orders_container = ctk.CTkFrame(subframe2, fg_color="transparent")
+        self.recent_orders_container.pack(fill='both', expand=True)
+        self._update_recent_orders_display()
 
-        recent_orders = [
-            {'id': '#CDE789', 'client': 'Client X', 'status': 'Expédiée'},
-            {'id': '#FGH123', 'client': 'Client Y', 'status': 'En préparation'},
-            {'id': '#JKL456', 'client': 'Client Z', 'status': 'En attente'},
-        ]
-
-        for o in recent_orders:
-            row = ctk.CTkFrame(subframe2, fg_color='transparent')
+    def _update_recent_orders_display(self):
+        """Met à jour dynamiquement la liste des dernières commandes en temps réel."""
+        for widget in self.recent_orders_container.winfo_children():
+            widget.destroy()
+        try:
+            orders = database.get_all_expeditions()
+        except Exception:
+            orders = []
+        # On prend les 3 plus récentes
+        for o in orders[:3]:
+            row = ctk.CTkFrame(self.recent_orders_container, fg_color='transparent')
             row.pack(fill='x', padx=15, pady=5)
-            ctk.CTkLabel(row, text=f"📋 {o['id']} - {o['client']}", font=ctk.CTkFont(size=13)).pack(side='left')
+            ctk.CTkLabel(row, text=f"📋 {o['number']} - {o['client']}", font=ctk.CTkFont(size=13)).pack(side='left')
             ctk.CTkLabel(row, text=o['status'], font=ctk.CTkFont(size=12), text_color='#666666').pack(side='right')
 
     def _update_time(self):
-        now = datetime.now().strftime("%A, %d %B %Y - %H:%M:%S")
-        self.time_lbl.configure(text=now)
-        self.time_lbl.after(1000, self._update_time)
+        try:
+            locale.setlocale(locale.LC_TIME, 'fr_FR.UTF-8')
+        except:
+            try:
+                locale.setlocale(locale.LC_TIME, 'fr_FR')
+            except:
+                pass  # fallback si la locale n'est pas installée
+        now = datetime.now()
+        date_str = now.strftime("%A %d %B %Y - %H:%M:%S")
+        # Mettre la première lettre en minuscule (pour les jours/mois)
+        date_str = date_str[0].lower() + date_str[1:]
+        self.time_lbl.configure(text=date_str)
+        self.time_lbl.after(3000, self._update_time)
 
     def _clear_search(self):
         """Efface le contenu de la barre de recherche."""
@@ -563,50 +590,70 @@ class DashboardFrame(ctk.CTkFrame):
 
     def _perform_search(self):
         """
-        Effectue une recherche et gère l'affichage des résultats.
+        Effectue une recherche sur tous les éléments du dashboard (produits, commandes, mouvements, alertes).
         """
         search_query = self.search_var.get().lower()
-        
         # Effacer le contenu précédent
         for widget in self.main_content_container.winfo_children():
             widget.destroy()
-
         if not search_query:
-            # Si la recherche est vide, reconstruire le contenu par défaut
             self._build_activity(self.main_content_container)
             self._build_charts(self.main_content_container)
             self._build_tables(self.main_content_container)
             return
-
-        # SIMULATION: Remplacez ceci par votre vraie logique de recherche
-        # Pour l'exemple, je cherche dans le titre des activités récentes
-        activity_data = [
-            {'icon': '📥', 'user': 'A. Dupont', 'action': 'a reçu 50 unités de "Souris optique"', 'time': 'Il y a 2h', 'color': '#3B82F6'},
-            {'icon': '✏️', 'user': 'B. Martin', 'action': 'a modifié l\'emplacement du produit "Clavier USB"', 'time': 'Il y a 5h', 'color': '#F59E0B'},
-            {'icon': '🚚', 'user': 'C. Durand', 'action': 'a expédié la commande #CDE789', 'time': 'Il y a 8h', 'color': '#10B981'},
-        ]
-        results = [item for item in activity_data if search_query in item['action'].lower()]
-
-        if results:
-            # Afficher les résultats
-            results_frame = ctk.CTkFrame(self.main_content_container, fg_color='transparent')
-            results_frame.pack(fill='both', expand=True, padx=15, pady=10)
-            ctk.CTkLabel(results_frame, text=f"{len(results)} résultat(s) pour \"{search_query}\"", font=ctk.CTkFont(size=18, weight='bold')).pack(anchor='w', pady=(0,15))
-            
-            for item in results:
-                 # Recréer une carte simplifiée pour l'exemple
-                item_frame = ctk.CTkFrame(results_frame, fg_color='#F8F9FA', corner_radius=8)
-                item_frame.pack(fill='x', pady=5)
-                ctk.CTkLabel(item_frame, text=f"{item['icon']} {item['action']}", font=ctk.CTkFont(size=14)).pack(anchor='w', padx=15, pady=10)
-        else:
-            # Afficher un message si aucun résultat n'est trouvé
-            no_results_frame = ctk.CTkFrame(self.main_content_container, fg_color='transparent')
-            no_results_frame.pack(fill='both', expand=True, padx=30, pady=30)
-            
-            ctk.CTkLabel(no_results_frame, text="🤷‍♂️", font=ctk.CTkFont(size=64)).pack(pady=(20,10))
-            ctk.CTkLabel(no_results_frame, text="Aucun résultat trouvé", font=ctk.CTkFont(size=24, weight='bold'), text_color='#333').pack(pady=(0,10))
-            ctk.CTkLabel(no_results_frame, text=f"Nous n'avons rien trouvé pour \"{search_query}\".\nEssayez avec d'autres mots-clés ou vérifiez l'orthographe.",
-                         font=ctk.CTkFont(size=16), text_color='#666', justify='center').pack()
+        # Recherche dans les produits
+        produits = database.get_all_products()
+        produits_results = [p for p in produits if search_query in p['name'].lower() or search_query in p.get('description','').lower() or search_query in p.get('brand','').lower()]
+        # Recherche dans les commandes
+        try:
+            commandes = database.get_all_expeditions()
+        except Exception:
+            commandes = []
+        commandes_results = [c for c in commandes if search_query in c['number'].lower() or search_query in c['client'].lower() or (c.get('status') and search_query in c['status'].lower())]
+        # Recherche dans les mouvements (activité)
+        try:
+            mouvements = database.get_recent_activity(20)
+        except Exception:
+            mouvements = []
+        mouvements_results = [m for m in mouvements if search_query in m['action'].lower() or search_query in m['user'].lower() or search_query in m['type'].lower()]
+        # Recherche dans les produits en alerte
+        alertes_results = [p for p in self.alert_products if search_query in p['name'].lower() or search_query in p['stock'].lower() or search_query in p['loc'].lower()]
+        # Affichage des résultats
+        results_frame = ctk.CTkFrame(self.main_content_container, fg_color='transparent')
+        results_frame.pack(fill='both', expand=True, padx=15, pady=10)
+        total_results = len(produits_results) + len(commandes_results) + len(mouvements_results) + len(alertes_results)
+        ctk.CTkLabel(results_frame, text=f"{total_results} résultat(s) pour \"{search_query}\"", font=ctk.CTkFont(size=18, weight='bold')).pack(anchor='w', pady=(0,15))
+        if produits_results:
+            ctk.CTkLabel(results_frame, text="Produits :", font=ctk.CTkFont(size=15, weight='bold')).pack(anchor='w', pady=(8,2))
+            for p in produits_results:
+                row = ctk.CTkFrame(results_frame, fg_color='#F8F9FA', corner_radius=8)
+                row.pack(fill='x', pady=3)
+                ctk.CTkLabel(row, text=f"📦 {p['name']} ({p['stock']})", font=ctk.CTkFont(size=14)).pack(side='left', padx=10, pady=6)
+                ctk.CTkLabel(row, text=p.get('brand',''), font=ctk.CTkFont(size=12), text_color='#666').pack(side='left', padx=8)
+        if commandes_results:
+            ctk.CTkLabel(results_frame, text="Commandes :", font=ctk.CTkFont(size=15, weight='bold')).pack(anchor='w', pady=(12,2))
+            for c in commandes_results:
+                row = ctk.CTkFrame(results_frame, fg_color='#EFF6FF', corner_radius=8)
+                row.pack(fill='x', pady=3)
+                ctk.CTkLabel(row, text=f"📦 {c['number']} - {c['client']}", font=ctk.CTkFont(size=14)).pack(side='left', padx=10, pady=6)
+                ctk.CTkLabel(row, text=c.get('status',''), font=ctk.CTkFont(size=12), text_color='#666').pack(side='left', padx=8)
+        if mouvements_results:
+            ctk.CTkLabel(results_frame, text="Activité récente :", font=ctk.CTkFont(size=15, weight='bold')).pack(anchor='w', pady=(12,2))
+            for m in mouvements_results:
+                row = ctk.CTkFrame(results_frame, fg_color='#F8F9FA', corner_radius=8)
+                row.pack(fill='x', pady=3)
+                ctk.CTkLabel(row, text=f"{m['icon']} {m['user']} {m['action']}", font=ctk.CTkFont(size=14)).pack(side='left', padx=10, pady=6)
+                ctk.CTkLabel(row, text=m['time'], font=ctk.CTkFont(size=12), text_color='#999').pack(side='left', padx=8)
+        if alertes_results:
+            ctk.CTkLabel(results_frame, text="Produits en alerte :", font=ctk.CTkFont(size=15, weight='bold')).pack(anchor='w', pady=(12,2))
+            for a in alertes_results:
+                row = ctk.CTkFrame(results_frame, fg_color='#FEF2F2', corner_radius=8)
+                row.pack(fill='x', pady=3)
+                ctk.CTkLabel(row, text=f"🚨 {a['name']} ({a['stock']})", font=ctk.CTkFont(size=14), text_color='#D32F2F').pack(side='left', padx=10, pady=6)
+                ctk.CTkLabel(row, text=a['loc'], font=ctk.CTkFont(size=12), text_color='#666').pack(side='left', padx=8)
+        if total_results == 0:
+            ctk.CTkLabel(results_frame, text="🤷‍♂️ Aucun résultat trouvé", font=ctk.CTkFont(size=24, weight='bold'), text_color='#333').pack(pady=(20,10))
+            ctk.CTkLabel(results_frame, text=f"Nous n'avons rien trouvé pour \"{search_query}\".\nEssayez avec d'autres mots-clés ou vérifiez l'orthographe.", font=ctk.CTkFont(size=16), text_color='#666', justify='center').pack()
 
     def _on_search_focus_in(self, event):
         self.search_entry.configure(fg_color='#F8F9FA', border_width=1, border_color='#A5B4FC')
@@ -684,8 +731,150 @@ class DashboardFrame(ctk.CTkFrame):
         pass
 
     def _show_analytics(self):
-        # Implémentation de la mise en place de la vue des rapports
-        print("Vue des rapports")
+        # Affiche un pop-up avec le RapportAnalyticsFrame
+        popup = ctk.CTkToplevel(self)
+        popup.title("Rapports et Analytics")
+        popup.geometry("1200x800")
+        popup.grab_set()
+        popup.focus_force()
+        popup.resizable(True, True)
+        from rapport_analytics import RapportAnalyticsFrame
+        RapportAnalyticsFrame(popup, user_info=self.user)
+
+    def _show_notifications_popup(self):
+        popup = ctk.CTkToplevel(self)
+        popup.title("Notifications en temps réel")
+        popup.geometry("420x600")
+        popup.grab_set()
+        popup.focus_force()
+        popup.resizable(False, False)
+        ctk.CTkLabel(popup, text="🔔 Notifications", font=ctk.CTkFont(size=20, weight="bold"), text_color="#333").pack(pady=(18, 8))
+        notif_frame = ctk.CTkScrollableFrame(popup, fg_color="#f9fafb")
+        notif_frame.pack(fill="both", expand=True, padx=18, pady=8)
+        # Générer les notifications à partir des produits en alerte, commandes, mouvements
+        notifications = []
+        # Produits en alerte
+        for p in self.alert_products:
+            notifications.append({
+                'icon': '🚨',
+                'text': f"Stock critique pour {p['name']} ({p['stock']}) à {p['loc']}",
+                'color': '#ef4444'
+            })
+        # Dernières commandes
+        try:
+            from database import get_all_expeditions
+            commandes = get_all_expeditions()
+            for c in commandes[:3]:
+                notifications.append({
+                    'icon': '📦',
+                    'text': f"Commande {c['number']} - {c['client']} : {c['status']}",
+                    'color': '#3B82F6'
+                })
+        except Exception:
+            pass
+        # Derniers mouvements
+        for a in self.activity_data[:5]:
+            notifications.append({
+                'icon': a['icon'],
+                'text': f"{a['user']} {a['action']}",
+                'color': a['color']
+            })
+        if not notifications:
+            ctk.CTkLabel(notif_frame, text="Aucune notification récente.", font=ctk.CTkFont(size=15), text_color="#666").pack(pady=30)
+        else:
+            for n in notifications:
+                row = ctk.CTkFrame(notif_frame, fg_color="white", corner_radius=8)
+                row.pack(fill='x', pady=6, padx=2)
+                ctk.CTkLabel(row, text=n['icon'], font=ctk.CTkFont(size=18), text_color=n['color']).pack(side='left', padx=8)
+                ctk.CTkLabel(row, text=n['text'], font=ctk.CTkFont(size=13), text_color="#222").pack(side='left', padx=4)
+
+    def refresh_data(self):
+        """Rafraîchit toutes les données du dashboard en temps réel depuis la base de données."""
+        self.alert_products = self._get_alert_products_from_db()
+        self.activity_data = self._get_activity_from_db()
+        self.stats_data = self._get_stats_from_db()
+        self.charts_data = self._get_charts_data_from_db()
+        self._update_alert_products_display()
+        self._update_activity_display()
+        self._update_stats_display()
+        self._update_charts_display()
+        self._update_recent_orders_display()
+        # Mettre à jour le nombre de notifications
+        notif_count = len(self.alert_products)
+        try:
+            from database import get_all_expeditions
+            notif_count += len(get_all_expeditions()[:3])
+        except Exception:
+            pass
+        notif_count += min(5, len(self.activity_data))
+        self.notif_count.set(f"🔔 {notif_count}")
+        self.after(self.refresh_interval, self.refresh_data)
+
+    def _get_alert_products_from_db(self):
+        """Récupère les produits en alerte (stock bas) depuis la base de données."""
+        produits = database.get_all_products()
+        return [
+            {'name': p['name'], 'stock': f"{p['stock']} / {p['alert']}", 'loc': p['loc']}
+            for p in produits if p['stock'] <= p['alert']
+        ]
+
+    def _get_activity_from_db(self):
+        """Récupère l'activité récente réelle depuis la base de données (mouvements)."""
+        try:
+            return database.get_recent_activity(10)
+        except Exception:
+            return []
+
+    def _get_stats_from_db(self):
+        """Récupère les statistiques globales pour les cartes du dashboard."""
+        produits = database.get_all_products()
+        nb_produits = len(produits)
+        nb_alertes = len([p for p in produits if p['stock'] <= p['alert']])
+        # Cellules temps réel
+        try:
+            nb_cellules_occupees, nb_cellules_total = database.get_cellules_stats()
+        except Exception:
+            nb_cellules_occupees, nb_cellules_total = 0, 0
+        # Commandes temps réel
+        try:
+            nb_commandes = database.get_commandes_en_cours()
+        except Exception:
+            nb_commandes = 0
+        return {
+            'produits': nb_produits,
+            'cellules': f"{nb_cellules_occupees}/{nb_cellules_total}",
+            'commandes': nb_commandes,
+            'alertes': nb_alertes
+        }
+
+    def _get_charts_data_from_db(self):
+        """Récupère les données pour les graphiques depuis la base de données (vraies stats)."""
+        # Activité 7 derniers jours : nombre de mouvements par jour
+        try:
+            activity = database.get_mouvements_7_jours()
+        except Exception:
+            activity = [0]*7
+        # Répartition par zone : nombre de produits par zone
+        try:
+            zones_dict = database.get_repartition_zones()
+            zones_labels = list(zones_dict.keys())
+            zones = list(zones_dict.values())
+        except Exception:
+            zones_labels = ['Zone A','Zone B','Zone C']
+            zones = [1,1,1]
+        return {
+            'activity': activity,
+            'zones': zones,
+            'zones_labels': zones_labels
+        }
+
+    def _update_stats_display(self):
+        """Met à jour dynamiquement les valeurs des stats en temps réel."""
+        if not hasattr(self, 'stats_labels') or not hasattr(self, 'stats_data'):
+            return
+        for key, label in self.stats_labels.items():
+            if key in self.stats_data:
+                label.configure(text=str(self.stats_data[key]))
 
 # Classe pour compatibilité avec l'ancien code
 class DashboardApp(ctk.CTk):
