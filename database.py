@@ -801,6 +801,54 @@ def get_all_colis():
         print(f"Erreur lors de la récupération des colis: {e}")
         return []
 
+def add_colis(id_reception, dimension, poids, emplacement):
+    """Ajoute un colis à une réception donnée."""
+    import psycopg2
+    try:
+        conn = psycopg2.connect(**PG_CONN)
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO sge_cre.colis (id_reception, dimension, poids, emplacement) VALUES (%s, %s, %s, %s)",
+            (id_reception, dimension, poids, emplacement)
+        )
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"Erreur lors de l'ajout du colis: {e}")
+        return False
+
+def update_colis(id_colis, dimension, poids, emplacement):
+    """Met à jour un colis existant."""
+    import psycopg2
+    try:
+        conn = psycopg2.connect(**PG_CONN)
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE sge_cre.colis SET dimension = %s, poids = %s, emplacement = %s WHERE id_colis = %s",
+            (dimension, poids, emplacement, id_colis)
+        )
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"Erreur lors de la mise à jour du colis: {e}")
+        return False
+
+def delete_colis(id_colis):
+    """Supprime un colis par son id."""
+    import psycopg2
+    try:
+        conn = psycopg2.connect(**PG_CONN)
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM sge_cre.colis WHERE id_colis = %s", (id_colis,))
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"Erreur lors de la suppression du colis: {e}")
+        return False
+
 def get_mouvements_7_jours():
     """Retourne une liste du nombre de mouvements par jour sur les 7 derniers jours (du plus ancien au plus récent)."""
     conn = psycopg2.connect(**PG_CONN)
@@ -1209,6 +1257,55 @@ def add_bon_reception(reference, fournisseur, date_reception, observation, nb_co
         return True
     except Exception as e:
         print(f"Erreur lors de l'ajout du bon de réception: {e}")
+        return False
+
+def update_bon_reception(id_bon_reception, reference, fournisseur, date_reception, observation, nb_colis, poids_total):
+    """Met à jour un bon de réception et la réception associée. Ne modifie pas les colis existants (pour simplifier)."""
+    import psycopg2
+    try:
+        conn = psycopg2.connect(**PG_CONN)
+        cursor = conn.cursor()
+        # Récupérer l'id_reception lié au bon
+        cursor.execute("SELECT id_reception FROM sge_cre.bon_receptions WHERE id_bon_reception = %s", (id_bon_reception,))
+        id_reception = cursor.fetchone()[0]
+        # Mettre à jour la réception
+        cursor.execute(
+            "UPDATE sge_cre.receptions SET date_reception = %s WHERE id_reception = %s",
+            (date_reception, id_reception)
+        )
+        # Mettre à jour le bon de réception
+        cursor.execute(
+            "UPDATE sge_cre.bon_receptions SET date_reception = %s, fournisseur = %s, reference_commande = %s, observation = %s WHERE id_bon_reception = %s",
+            (date_reception, fournisseur, reference, observation, id_bon_reception)
+        )
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"Erreur lors de la mise à jour du bon de réception: {e}")
+        return False
+
+
+def delete_bon_reception(id_bon_reception):
+    """Supprime un bon de réception, la réception associée et les colis liés."""
+    import psycopg2
+    try:
+        conn = psycopg2.connect(**PG_CONN)
+        cursor = conn.cursor()
+        # Récupérer l'id_reception lié au bon
+        cursor.execute("SELECT id_reception FROM sge_cre.bon_receptions WHERE id_bon_reception = %s", (id_bon_reception,))
+        id_reception = cursor.fetchone()[0]
+        # Supprimer les colis liés
+        cursor.execute("DELETE FROM sge_cre.colis WHERE id_reception = %s", (id_reception,))
+        # Supprimer le bon de réception
+        cursor.execute("DELETE FROM sge_cre.bon_receptions WHERE id_bon_reception = %s", (id_bon_reception,))
+        # Supprimer la réception
+        cursor.execute("DELETE FROM sge_cre.receptions WHERE id_reception = %s", (id_reception,))
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"Erreur lors de la suppression du bon de réception: {e}")
         return False
 
 if __name__ == "__main__":

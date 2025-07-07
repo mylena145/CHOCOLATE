@@ -3,6 +3,7 @@ from stock_management_page import SidebarFrame
 from responsive_utils import ThemeToggleButton
 from tkinter import messagebox
 import database
+from tkcalendar import DateEntry
 
 class ReceptionFrame(ctk.CTkFrame):
     def __init__(self, master, user_info=None):
@@ -427,12 +428,13 @@ class ReceptionFrame(ctk.CTkFrame):
             "Référence",
             "Fournisseur",
             "Date prévue",
-            "Date réception",
+            "Date réception effective",
             "Observation",
             "Statut",
-            "Magasinier"
+            "Magasinier",
+            "Actions"  # Nouvelle colonne pour les boutons
         ]
-        col_widths = [120, 200, 150, 150, 180, 100, 140]
+        col_widths = [120, 140, 120, 140, 180, 100, 120, 80]
         header_frame = ctk.CTkFrame(table_container, fg_color="#F1F5F9", height=38, corner_radius=8, border_width=0, border_color="#E5E7EB")
         header_frame.pack(fill="x", pady=(0, 2))
         header_frame.grid_propagate(False)
@@ -478,6 +480,16 @@ class ReceptionFrame(ctk.CTkFrame):
                 cell_frame.pack_propagate(False)
                 label = ctk.CTkLabel(cell_frame, text=val, font=ctk.CTkFont(size=12), text_color="#374151")
                 label.pack(expand=True, fill="both", padx=8, pady=1)
+            # Ajout colonne actions (éditer/supprimer/voir colis)
+            actions_frame = ctk.CTkFrame(row_frame, fg_color="transparent", width=120)
+            actions_frame.pack(side="left", fill="y", padx=0.5, pady=0.5)
+            actions_frame.pack_propagate(False)
+            edit_btn = ctk.CTkButton(actions_frame, text="✏️", width=30, height=30, fg_color="#F3F4F6", text_color="#6B7280", hover_color="#E0E7EF", command=lambda r=row: self.open_edit_reception_popup(r))
+            edit_btn.pack(side="left", padx=2)
+            delete_btn = ctk.CTkButton(actions_frame, text="🗑️", width=30, height=30, fg_color="#FEE2E2", text_color="#EF4444", hover_color="#FCA5A5", command=lambda r=row: self.confirm_delete_reception(r))
+            delete_btn.pack(side="left", padx=2)
+            colis_btn = ctk.CTkButton(actions_frame, text="📦 Colis", width=60, height=30, fg_color="#3B82F6", text_color="white", hover_color="#2563EB", command=lambda r=row: self.open_colis_popup(r))
+            colis_btn.pack(side="left", padx=2)
         
         # Pagination
         self.render_pagination(table_container, total_count)
@@ -663,6 +675,31 @@ class ReceptionFrame(ctk.CTkFrame):
     def update_prochaines_arrivees(self):
         pass
 
+    def open_edit_reception_popup(self, row):
+        EditReceptionPopup(self, row)
+
+    def confirm_delete_reception(self, row):
+        def do_delete():
+            import database
+            success = database.delete_bon_reception(row['id'])
+            if success:
+                self.master.show_notification("Bon de réception supprimé avec succès !")
+            else:
+                self.master.show_notification("Erreur lors de la suppression !", duration=3000)
+            self._auto_refresh()
+        confirm = ctk.CTkToplevel(self)
+        confirm.title("Confirmer la suppression")
+        confirm.geometry("350x160")
+        confirm.grab_set()
+        ctk.CTkLabel(confirm, text="Voulez-vous supprimer ce bon de réception ?", font=ctk.CTkFont(size=15, weight="bold"), text_color="#EF4444").pack(pady=(30,10))
+        btns = ctk.CTkFrame(confirm, fg_color="white")
+        btns.pack(pady=10)
+        ctk.CTkButton(btns, text="Oui, supprimer", fg_color="#EF4444", hover_color="#B91C1C", text_color="white", command=lambda: (do_delete(), confirm.destroy())).pack(side="left", padx=10)
+        ctk.CTkButton(btns, text="Annuler", fg_color="#6B7280", hover_color="#374151", text_color="white", command=confirm.destroy).pack(side="left", padx=10)
+
+    def open_colis_popup(self, row):
+        ColisPopup(self, row)
+
 class AddReceptionPopup(ctk.CTkToplevel):
     def __init__(self, master=None):
         super().__init__(master)
@@ -717,7 +754,7 @@ class AddReceptionPopup(ctk.CTkToplevel):
         date_frame = ctk.CTkFrame(row2, fg_color="white")
         date_frame.pack(side="left", expand=True, fill="x", padx=(0,8))
         ctk.CTkLabel(date_frame, text="Date de Réception Prévue *", font=ctk.CTkFont(size=14, weight="bold"), text_color="#374151").pack(anchor="w")
-        self.date_entry = ctk.CTkEntry(date_frame, fg_color="#f3f4f6", text_color="#222", border_color="#d1d5db", border_width=1, height=38, font=ctk.CTkFont(size=14))
+        self.date_entry = DateEntry(date_frame, date_pattern="yyyy-mm-dd", font=("Segoe UI", 13), background="#f3f4f6", foreground="#222", borderwidth=1, width=18)
         self.date_entry.pack(fill="x", pady=(4,0))
         # Colis attendu
         colis_frame = ctk.CTkFrame(row2, fg_color="white")
@@ -799,68 +836,59 @@ class AddReceptionPopup(ctk.CTkToplevel):
         # Réinitialiser tous les messages d'erreur
         for label in self.error_labels.values():
             label.configure(text="")
-        
         # Réinitialiser les bordures
         self.bon_entry.configure(border_color="#d1d5db")
         self.fournisseur_menu.configure(button_color="#e5e7eb")
-        self.date_entry.configure(border_color="#d1d5db")
+        # self.date_entry.configure(border_color="#d1d5db")  # LIGNE SUPPRIMÉE
         self.colis_entry.configure(border_color="#d1d5db")
         self.poids_entry.configure(border_color="#d1d5db")
-        
         has_errors = False
-        
         # Validation du numéro de bon
         if not self.bon_entry.get().strip():
-            self.error_labels['bon'].configure(text="Le numéro de bon est obligatoire")
+            self.error_labels['bon'].configure(text="Le numéro de bon est obligatoire. Veuillez saisir un identifiant unique pour le bon de réception.")
             self.bon_entry.configure(border_color="#EF4444")
             has_errors = True
-        
         # Validation du fournisseur
         if self.fournisseur_menu.get() == "Sélectionner un fournisseur":
-            self.error_labels['fournisseur'].configure(text="Veuillez sélectionner un fournisseur")
+            self.error_labels['fournisseur'].configure(text="Veuillez sélectionner un fournisseur dans la liste déroulante.")
             self.fournisseur_menu.configure(button_color="#EF4444")
             has_errors = True
-        
         # Validation de la date
         if not self.date_entry.get().strip():
-            self.error_labels['date'].configure(text="La date de réception est obligatoire")
-            self.date_entry.configure(border_color="#EF4444")
+            self.error_labels['date'].configure(text="La date de réception est obligatoire. Veuillez choisir une date valide à l'aide du calendrier.")
+            self.date_entry.configure(background="#ffe5e5")
             has_errors = True
-        
         # Validation du nombre de colis
         colis_text = self.colis_entry.get().strip()
         if not colis_text:
-            self.error_labels['colis'].configure(text="Le nombre de colis est obligatoire")
+            self.error_labels['colis'].configure(text="Le nombre de colis est obligatoire. Indiquez combien de colis sont attendus pour cette réception.")
             self.colis_entry.configure(border_color="#EF4444")
             has_errors = True
         elif not colis_text.isdigit() or int(colis_text) <= 0:
-            self.error_labels['colis'].configure(text="Le nombre de colis doit être un nombre positif")
+            self.error_labels['colis'].configure(text="Le nombre de colis doit être un nombre entier positif (ex: 5, 10, 20). Veuillez corriger la valeur saisie.")
             self.colis_entry.configure(border_color="#EF4444")
             has_errors = True
-        
         # Validation du poids
         poids_text = self.poids_entry.get().strip()
         if not poids_text:
-            self.error_labels['poids'].configure(text="Le poids total est obligatoire")
+            self.error_labels['poids'].configure(text="Le poids total est obligatoire. Veuillez indiquer le poids total (en kg) de tous les colis.")
             self.poids_entry.configure(border_color="#EF4444")
             has_errors = True
         else:
             try:
                 poids = float(poids_text)
                 if poids <= 0:
-                    self.error_labels['poids'].configure(text="Le poids doit être un nombre positif")
+                    self.error_labels['poids'].configure(text="Le poids doit être un nombre positif (ex: 12.5). Veuillez corriger la valeur saisie.")
                     self.poids_entry.configure(border_color="#EF4444")
                     has_errors = True
             except ValueError:
-                self.error_labels['poids'].configure(text="Le poids doit être un nombre valide")
+                self.error_labels['poids'].configure(text="Le poids doit être un nombre valide (ex: 10, 15.5). Veuillez corriger la valeur saisie.")
                 self.poids_entry.configure(border_color="#EF4444")
                 has_errors = True
-        
         # Afficher les labels d'erreur
         for label in self.error_labels.values():
             if label.cget("text"):
                 label.pack(anchor="w", pady=(2, 0))
-        
         if not has_errors:
             # Ajout réel en base
             reference = self.bon_entry.get().strip()
@@ -871,14 +899,11 @@ class AddReceptionPopup(ctk.CTkToplevel):
             poids_total = float(self.poids_entry.get().strip())
             success = database.add_bon_reception(reference, fournisseur, date_reception, observation, nb_colis, poids_total)
             if success:
-                self.show_success_popup("Bon de réception créé avec succès !")
-                # Rafraîchir la page principale si possible
-                if hasattr(self.master, 'render_table'):
-                    self.master.render_table(self.master.table_parent)
-                elif hasattr(self.master, 'update'):
-                    self.master.update()
+                self.master.master.show_notification("Bon de réception ajouté avec succès !")
             else:
-                self._show_error("Erreur lors de l'ajout du bon de réception en base de données.")
+                self.master.master.show_notification("Erreur lors de l'ajout !", duration=3000)
+            self.master._auto_refresh()
+            self.destroy()
 
     def show_success_popup(self, message="Bon de réception créé avec succès !"):
         popup = ctk.CTkToplevel(self)
@@ -1349,6 +1374,148 @@ class AnomaliesPopup(ctk.CTkToplevel):
                      text_color="white", corner_radius=8, height=32, 
                      font=ctk.CTkFont(size=13, weight="bold"), 
                      command=popup.destroy).pack(pady=15)
+
+# Popup d'édition
+class EditReceptionPopup(ctk.CTkToplevel):
+    def __init__(self, master, row):
+        super().__init__(master)
+        self.title("Modifier le bon de réception")
+        self.geometry("420x420")
+        self.grab_set()
+        self.row = row
+        self.master = master
+        self.build_form()
+
+    def build_form(self):
+        import database
+        ctk.CTkLabel(self, text="Modifier le bon de réception", font=ctk.CTkFont(size=18, weight="bold")).pack(pady=(18,10))
+        self.ref_entry = ctk.CTkEntry(self, placeholder_text="Référence", width=320)
+        self.ref_entry.pack(pady=6)
+        self.ref_entry.insert(0, self.row['reference'])
+        self.fourn_entry = ctk.CTkEntry(self, placeholder_text="Fournisseur", width=320)
+        self.fourn_entry.pack(pady=6)
+        self.fourn_entry.insert(0, self.row['fournisseur'])
+        self.date_entry = DateEntry(self, width=18, background='darkblue', foreground='white', borderwidth=2, date_pattern='yyyy-mm-dd')
+        self.date_entry.pack(pady=6)
+        if self.row['date_prevue']:
+            self.date_entry.set_date(self.row['date_prevue'])
+        self.obs_entry = ctk.CTkEntry(self, placeholder_text="Observation", width=320)
+        self.obs_entry.pack(pady=6)
+        self.obs_entry.insert(0, self.row['observation'] or "")
+        ctk.CTkButton(self, text="Enregistrer", fg_color="#3B82F6", hover_color="#2563EB", text_color="white", command=self.save).pack(pady=18)
+        ctk.CTkButton(self, text="Annuler", fg_color="#6B7280", hover_color="#374151", text_color="white", command=self.destroy).pack()
+
+    def save(self):
+        import database
+        ref = self.ref_entry.get()
+        fourn = self.fourn_entry.get()
+        date_prev = self.date_entry.get_date()
+        obs = self.obs_entry.get()
+        success = database.update_bon_reception(self.row['id'], ref, fourn, date_prev, obs, 0, 0)
+        if success:
+            self.master.master.show_notification("Bon de réception modifié avec succès !")
+        else:
+            self.master.master.show_notification("Erreur lors de la modification !", duration=3000)
+        self.master._auto_refresh()
+        self.destroy()
+
+# Popup de gestion des colis
+class ColisPopup(ctk.CTkToplevel):
+    def __init__(self, master, row):
+        super().__init__(master)
+        self.title(f"Colis pour {row['reference']}")
+        self.geometry("600x400")
+        self.grab_set()
+        self.row = row
+        self.master = master
+        self.build_ui()
+
+    def build_ui(self):
+        import database
+        ctk.CTkLabel(self, text=f"Colis pour {self.row['reference']}", font=ctk.CTkFont(size=18, weight="bold")).pack(pady=(18,10))
+        self.colis_frame = ctk.CTkFrame(self, fg_color="white")
+        self.colis_frame.pack(fill="both", expand=True, padx=10, pady=10)
+        self.refresh_colis()
+        ctk.CTkButton(self, text="+ Ajouter un colis", fg_color="#10B981", hover_color="#059669", text_color="white", command=self.add_colis_popup).pack(pady=8)
+        ctk.CTkButton(self, text="Fermer", fg_color="#6B7280", hover_color="#374151", text_color="white", command=self.destroy).pack(pady=4)
+
+    def refresh_colis(self):
+        import database
+        for widget in self.colis_frame.winfo_children():
+            widget.destroy()
+        # Filtrer les colis de cette réception
+        all_colis = database.get_all_colis()
+        colis = [c for c in all_colis if c['reception'] == self.row['id']]
+        for c in colis:
+            f = ctk.CTkFrame(self.colis_frame, fg_color="#F3F4F6", corner_radius=8)
+            f.pack(fill="x", pady=4, padx=2)
+            ctk.CTkLabel(f, text=f"Colis {c['id']} - {c['poids']}kg - {c['emplacement']}", font=ctk.CTkFont(size=14, weight="bold")).pack(side="left", padx=8)
+            ctk.CTkButton(f, text="✏️", width=30, height=28, fg_color="#F3F4F6", text_color="#6B7280", hover_color="#E0E7EF", command=lambda col=c: self.edit_colis_popup(col)).pack(side="left", padx=2)
+            ctk.CTkButton(f, text="🗑️", width=30, height=28, fg_color="#FEE2E2", text_color="#EF4444", hover_color="#FCA5A5", command=lambda col=c: self.delete_colis(col)).pack(side="left", padx=2)
+
+    def add_colis_popup(self):
+        AddEditColisPopup(self, self.row['id'], None, self.refresh_colis)
+
+    def edit_colis_popup(self, colis):
+        AddEditColisPopup(self, self.row['id'], colis, self.refresh_colis)
+
+    def delete_colis(self, colis):
+        import database
+        success = database.delete_colis(colis['id'])
+        if success:
+            self.master.master.show_notification("Colis supprimé avec succès !")
+        else:
+            self.master.master.show_notification("Erreur lors de la suppression du colis !", duration=3000)
+        self.refresh_colis()
+
+# Popup d'ajout/édition de colis
+class AddEditColisPopup(ctk.CTkToplevel):
+    def __init__(self, master, id_reception, colis=None, on_save=None):
+        super().__init__(master)
+        self.title("Ajouter/Modifier un colis")
+        self.geometry("350x320")
+        self.grab_set()
+        self.id_reception = id_reception
+        self.colis = colis
+        self.on_save = on_save
+        self.build_form()
+
+    def build_form(self):
+        import database
+        ctk.CTkLabel(self, text="Colis", font=ctk.CTkFont(size=16, weight="bold")).pack(pady=(18,10))
+        self.dimension_entry = ctk.CTkEntry(self, placeholder_text="Dimension", width=220)
+        self.dimension_entry.pack(pady=6)
+        self.poids_entry = ctk.CTkEntry(self, placeholder_text="Poids (kg)", width=220)
+        self.poids_entry.pack(pady=6)
+        self.emplacement_entry = ctk.CTkEntry(self, placeholder_text="Emplacement", width=220)
+        self.emplacement_entry.pack(pady=6)
+        if self.colis:
+            self.dimension_entry.insert(0, str(self.colis['dimension']))
+            self.poids_entry.insert(0, str(self.colis['poids']))
+            self.emplacement_entry.insert(0, self.colis['emplacement'])
+        ctk.CTkButton(self, text="Enregistrer", fg_color="#3B82F6", hover_color="#2563EB", text_color="white", command=self.save).pack(pady=18)
+        ctk.CTkButton(self, text="Annuler", fg_color="#6B7280", hover_color="#374151", text_color="white", command=self.destroy).pack()
+
+    def save(self):
+        import database
+        dimension = self.dimension_entry.get()
+        poids = self.poids_entry.get()
+        emplacement = self.emplacement_entry.get()
+        if self.colis:
+            success = database.update_colis(self.colis['id'], dimension, poids, emplacement)
+            if success:
+                self.master.master.show_notification("Colis modifié avec succès !")
+            else:
+                self.master.master.show_notification("Erreur lors de la modification du colis !", duration=3000)
+        else:
+            success = database.add_colis(self.id_reception, dimension, poids, emplacement)
+            if success:
+                self.master.master.show_notification("Colis ajouté avec succès !")
+            else:
+                self.master.master.show_notification("Erreur lors de l'ajout du colis !", duration=3000)
+        if self.on_save:
+            self.on_save()
+        self.destroy()
 
 if __name__ == "__main__":
     app = ctk.CTk()

@@ -47,6 +47,8 @@ class GestionExpeditionsApp(ctk.CTkFrame):
             self.planning_frame = None  # Pour garder une référence au bloc planning
             self._build_interface()
             self._refresh_planning_periodically()  # Démarre le rafraîchissement auto
+            self._auto_refresh_interval = 5000  # 5 secondes
+            self._auto_refresh()
         except Exception as e:
             self._show_error(str(e))
     
@@ -1204,6 +1206,10 @@ class GestionExpeditionsApp(ctk.CTkFrame):
         except Exception as e:
             print(f"Erreur lors du rafraîchissement du planning: {e}")
         self.after(30000, self._refresh_planning_periodically)  # 30 secondes
+
+    def _auto_refresh(self):
+        self.refresh_data()
+        self.after(self._auto_refresh_interval, self._auto_refresh)
 
     def _go_back(self):
         """Retourne à la page précédente si possible, sinon dashboard"""
