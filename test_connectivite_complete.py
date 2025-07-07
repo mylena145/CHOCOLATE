@@ -75,7 +75,7 @@ def test_connectivite_complete():
         
         # Test des mouvements
         try:
-            cursor.execute("SELECT COUNT(*) FROM mouvements")
+            cursor.execute("SELECT COUNT(*) FROM sge_cre.mouvements")
             movements = cursor.fetchone()[0]
             print(f"   ✅ Mouvements de stock: {movements}")
         except:

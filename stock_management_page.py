@@ -51,13 +51,25 @@ class StockManagementFrame(ctk.CTkFrame):
     def create_widgets(self):
         main_frame = ctk.CTkFrame(self.main_content, fg_color="transparent")
         main_frame.pack(fill="both", expand=True, padx=20, pady=20)
-        self._build_topbar()
+        # Nouveau topbar en haut
+        topbar = ctk.CTkFrame(main_frame, fg_color="white", height=70)
+        topbar.pack(fill="x", pady=(0, 18), padx=0)
+        topbar.grid_columnconfigure(0, weight=1)
+        title = ctk.CTkLabel(topbar, text="Gestion des Stocks", font=ctk.CTkFont(size=22, weight="bold"), text_color="#222")
+        title.grid(row=0, column=0, sticky="w", pady=(8,0), padx=(10,0))
+        # Bouton Mode Sombre
+        self.theme_button = ThemeToggleButton(topbar, self.master)
+        self.theme_button.grid(row=0, column=1, sticky="e", padx=(0,10))
+        # Bouton Ajouter Produit
+        btn = ctk.CTkButton(topbar, text="➕ Ajouter Produit", fg_color="#3b82f6", hover_color="#2563eb", text_color="white", corner_radius=8, font=ctk.CTkFont(size=14, weight="bold"), width=150, height=36, command=self._open_add_product_modal)
+        btn.grid(row=0, column=2, sticky="e", padx=(0,10))
+        # Suite du contenu
         self.create_summary_cards(main_frame)
         self.create_filter_bar(main_frame)
-        topbar = ctk.CTkFrame(main_frame, fg_color="transparent")
-        topbar.pack(fill="x", pady=(10, 0))
+        topbar2 = ctk.CTkFrame(main_frame, fg_color="transparent")
+        topbar2.pack(fill="x", pady=(10, 0))
         btn_retour = ctk.CTkButton(
-            topbar,
+            topbar2,
             text="← Retour",
             width=110,
             height=36,

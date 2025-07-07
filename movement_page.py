@@ -6,6 +6,8 @@ from CTkToolTip import CTkToolTip
 import psycopg2
 from tkinter import messagebox
 from responsive_utils import ThemeToggleButton
+import webbrowser
+from tkinter import Toplevel
 
 # Paramètres de connexion PostgreSQL
 PG_CONN = dict(
@@ -101,13 +103,11 @@ class MovementsFrame(ctk.CTkFrame):
     def create_widgets(self):
         # Header
         self._create_header()
-        
         # Cartes de statistiques
         self._create_stats_cards()
-        
+        self._refresh_stats_cards()  # Démarre le rafraîchissement temps réel
         # Barre de filtres
         self._create_filter_bar()
-        
         # Tableau des mouvements
         self._create_movements_table()
 
@@ -183,7 +183,7 @@ class MovementsFrame(ctk.CTkFrame):
         """Crée les cartes de statistiques dans le style de l'app"""
         cards_frame = ctk.CTkFrame(self.main_content, fg_color="transparent")
         cards_frame.pack(fill="x", pady=(0, 20), padx=20)
-
+        self.stats_cards = []
         cards_data = [
             {
                 "icon": "📥", 
@@ -219,45 +219,38 @@ class MovementsFrame(ctk.CTkFrame):
                 "icon_bg": "#FEF3C7"
             }
         ]
-
         for card_data in cards_data:
             card = ctk.CTkFrame(cards_frame, fg_color="white", corner_radius=10, border_width=1, border_color="#E5E7EB")
             card.pack(side="left", expand=True, fill="x", padx=10)
-            
             card_content = ctk.CTkFrame(card, fg_color="transparent")
             card_content.pack(padx=15, pady=15, expand=True, fill="x")
-
             top_frame = ctk.CTkFrame(card_content, fg_color="transparent")
             top_frame.pack(fill="x")
-
             icon_frame = ctk.CTkFrame(top_frame, fg_color=card_data["icon_bg"], width=40, height=40, corner_radius=8)
             icon_frame.pack(side="left", padx=(0, 10))
             icon_frame.pack_propagate(False)
-
             ctk.CTkLabel(
                 icon_frame, 
                 text=card_data["icon"], 
                 font=ctk.CTkFont(size=22),
                 text_color="#212224"
             ).pack(expand=True)
-            
             ctk.CTkLabel(
                 top_frame, 
                 text=card_data["title"], 
                 font=ctk.CTkFont(size=15, weight="bold"), 
                 text_color="#374151"
             ).pack(side="left", anchor="center")
-
             value_frame = ctk.CTkFrame(card_content, fg_color="transparent")
             value_frame.pack(anchor="w", pady=(10, 2))
-            
-            ctk.CTkLabel(
+            value_label = ctk.CTkLabel(
                 value_frame, 
                 text=card_data["value"], 
                 font=ctk.CTkFont(size=32, weight="bold"), 
                 text_color="#111827"
-            ).pack(side="left")
-            
+            )
+            value_label.pack(side="left")
+            self.stats_cards.append(value_label)
             if "devise" in card_data:
                 ctk.CTkLabel(
                     value_frame, 
@@ -265,13 +258,24 @@ class MovementsFrame(ctk.CTkFrame):
                     font=ctk.CTkFont(size=20, weight="bold"), 
                     text_color="#16a34a"
                 ).pack(side="left", padx=(8,0))
-            
             ctk.CTkLabel(
                 card_content, 
                 text=card_data["subtitle"], 
                 font=ctk.CTkFont(size=13), 
                 text_color=card_data["subtitle_color"]
             ).pack(anchor="w")
+
+    def _refresh_stats_cards(self):
+        # Met à jour les valeurs des stats en temps réel
+        try:
+            self.stats_cards[0].configure(text=str(self._get_today_movements("Entrée")))
+            self.stats_cards[1].configure(text=str(self._get_today_movements("Sortie")))
+            self.stats_cards[2].configure(text=str(self._get_total_movements()))
+            valeur = self._get_valeur_deplacee()
+            self.stats_cards[3].configure(text=f"{valeur:,}")
+        except Exception as e:
+            print(f"Erreur refresh stats: {e}")
+        self.after(1000, self._refresh_stats_cards)
 
     def _create_filter_bar(self):
         """Crée la barre de filtres dans le style de l'app"""
@@ -600,8 +604,7 @@ class MovementsFrame(ctk.CTkFrame):
         MovementModal(self, movement_type)
 
     def _export_movements(self):
-        """Exporte les mouvements"""
-        messagebox.showinfo("Export", "Fonctionnalité d'export en cours de développement")
+        ExportPopup(self, self._get_movements)
 
     # Méthodes de données
     def _get_today_movements(self, movement_type):
@@ -611,7 +614,7 @@ class MovementsFrame(ctk.CTkFrame):
         
         today = datetime.datetime.now().strftime("%Y-%m-%d")
         cursor.execute(
-            "SELECT COUNT(*) FROM mouvements WHERE type = %s AND date(date_mouvement) = date(%s)",
+            "SELECT COUNT(*) FROM sge_cre.mouvements WHERE type = %s AND date(date_mouvement) = date(%s)",
             (movement_type, today)
         )
         count = cursor.fetchone()[0]
@@ -635,7 +638,7 @@ class MovementsFrame(ctk.CTkFrame):
         conn = psycopg2.connect(**PG_CONN)
         cursor = conn.cursor()
         
-        query = "SELECT * FROM mouvements WHERE 1=1"
+        query = "SELECT * FROM sge_cre.mouvements WHERE 1=1"
         params = []
         
         # Appliquer les filtres
@@ -723,6 +726,20 @@ class MovementsFrame(ctk.CTkFrame):
         except Exception as e:
             print(f"Erreur lors de l'application du thème à la page Mouvements: {e}")
 
+    def _get_valeur_deplacee(self):
+        """Calcule la valeur totale déplacée du jour (quantité * prix_unitaire)"""
+        conn = psycopg2.connect(**PG_CONN)
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT COALESCE(SUM(m.quantite * p.prix_unitaire), 0)
+            FROM sge_cre.mouvements m
+            JOIN sge_cre.produits p ON m.produit_nom = p.nom
+            WHERE date(m.date_mouvement) = CURRENT_DATE
+        ''')
+        valeur = cursor.fetchone()[0]
+        conn.close()
+        return valeur
+
 
 class MovementModal(ctk.CTkToplevel):
     """Fenêtre modale pour créer un mouvement"""
@@ -730,231 +747,119 @@ class MovementModal(ctk.CTkToplevel):
         super().__init__(parent)
         self.parent = parent
         self.movement_type = movement_type
-        
-        # Configuration de la fenêtre
         self.title(f"Nouveau Mouvement - {movement_type}")
-        self.geometry("600x700")
+        self.geometry("500x500")
         self.configure(fg_color="white")
-        
-        # Centrer la fenêtre
-        self.update_idletasks()
-        x = (self.winfo_screenwidth() // 2) - (600 // 2)
-        y = (self.winfo_screenheight() // 2) - (700 // 2)
-        self.geometry(f"600x700+{x}+{y}")
-        
-        # Modal
         self.transient(parent)
         self.grab_set()
-        
         self.create_content()
-        
+
     def create_content(self):
-        """Crée le contenu de la modale"""
         # Header
         header = ctk.CTkFrame(self, fg_color="transparent")
         header.pack(fill="x", padx=20, pady=20)
-        
         icon = "📥" if self.movement_type == "Entrée" else "📤"
         color = "#10B981" if self.movement_type == "Entrée" else "#EF4444"
-        
-        ctk.CTkLabel(
-            header,
-            text=f"{icon} Nouvelle {self.movement_type}",
-            font=ctk.CTkFont(size=24, weight="bold"),
-            text_color=color
-        ).pack(side="left")
-        
-        # Formulaire
-        form_frame = ctk.CTkScrollableFrame(self, fg_color="white")
+        ctk.CTkLabel(header, text=f"{icon} Nouvelle {self.movement_type}", font=ctk.CTkFont(size=22, weight="bold"), text_color=color).pack(side="left")
+
+        form_frame = ctk.CTkFrame(self, fg_color="white")
         form_frame.pack(fill="both", expand=True, padx=20, pady=(0, 20))
-        
-        # Sélection du produit
-        ctk.CTkLabel(
-            form_frame,
-            text="Produit *",
-            font=ctk.CTkFont(size=14, weight="bold"),
-            text_color="#374151"
-        ).pack(anchor="w", pady=(0, 5))
-        
+
+        # Produit
+        ctk.CTkLabel(form_frame, text="Produit *", font=ctk.CTkFont(size=14, weight="bold"), text_color="#374151").pack(anchor="w", pady=(0, 4))
         products = self._get_products_list()
         self.product_var = tk.StringVar()
-        self.product_menu = ctk.CTkOptionMenu(
-            form_frame,
-            values=products,
-            variable=self.product_var,
-            fg_color="#F3F4F6",
-            button_color="#E5E7EB",
-            button_hover_color="#D1D5DB",
-            dropdown_fg_color="#F3F4F6",
-            dropdown_text_color="#111827",
-            corner_radius=8,
-            height=38,
-            font=ctk.CTkFont(size=14),
-            command=self._on_product_selected
-        )
-        self.product_menu.pack(fill="x", pady=(0, 15))
-        
-        # Stock actuel (info)
-        self.stock_info_frame = ctk.CTkFrame(form_frame, fg_color="#F0FDF4", corner_radius=8)
-        self.stock_info_frame.pack(fill="x", pady=(0, 15))
-        
-        stock_content = ctk.CTkFrame(self.stock_info_frame, fg_color="transparent")
-        stock_content.pack(padx=15, pady=10)
-        
-        ctk.CTkLabel(
-            stock_content,
-            text="Stock actuel:",
-            font=ctk.CTkFont(size=12),
-            text_color="#166534"
-        ).pack(side="left")
-        
-        self.stock_label = ctk.CTkLabel(
-            stock_content,
-            text="-- unités",
-            font=ctk.CTkFont(size=14, weight="bold"),
-            text_color="#166534"
-        )
-        self.stock_label.pack(side="left", padx=(10, 0))
-        
+        if products:
+            self.product_menu = ctk.CTkOptionMenu(form_frame, values=products, variable=self.product_var, fg_color="#F3F4F6", button_color="#E5E7EB", button_hover_color="#D1D5DB", dropdown_fg_color="#F3F4F6", dropdown_text_color="#111827", corner_radius=8, height=38)
+            self.product_menu.pack(fill="x", pady=(0, 10))
+        else:
+            ctk.CTkLabel(form_frame, text="Aucun produit disponible", text_color="#DC2626").pack(anchor="w", pady=(0, 10))
+
         # Quantité
-        ctk.CTkLabel(
-            form_frame,
-            text="Quantité *",
-            font=ctk.CTkFont(size=14, weight="bold"),
-            text_color="#374151"
-        ).pack(anchor="w", pady=(0, 5))
-        
-        self.quantity_entry = ctk.CTkEntry(
-            form_frame,
-            placeholder_text="Entrez la quantité",
-            fg_color="#F3F4F6",
-            border_width=0,
-            corner_radius=8,
-            height=38,
-            font=ctk.CTkFont(size=14)
-        )
-        self.quantity_entry.pack(fill="x", pady=(0, 15))
-        
+        ctk.CTkLabel(form_frame, text="Quantité *", font=ctk.CTkFont(size=14, weight="bold"), text_color="#374151").pack(anchor="w", pady=(0, 4))
+        self.qty_entry = ctk.CTkEntry(form_frame, placeholder_text="Quantité", fg_color="#F3F4F6", text_color="#111827", border_width=1, border_color="#D1D5DB", height=38, corner_radius=8)
+        self.qty_entry.pack(fill="x", pady=(0, 10))
+
         # Référence
-        ctk.CTkLabel(
-            form_frame,
-            text="Référence du bon",
-            font=ctk.CTkFont(size=14, weight="bold"),
-            text_color="#374151"
-        ).pack(anchor="w", pady=(0, 5))
-        
-        self.reference_entry = ctk.CTkEntry(
-            form_frame,
-            placeholder_text=f"Ex: {'BE' if self.movement_type == 'Entrée' else 'BS'}-2024-001",
-            fg_color="#F3F4F6",
-            border_width=0,
-            corner_radius=8,
-            height=38,
-            font=ctk.CTkFont(size=14)
-        )
-        self.reference_entry.pack(fill="x", pady=(0, 15))
-        
-        # Origine/Destination
-        location_label = "Origine" if self.movement_type == "Entrée" else "Destination"
-        ctk.CTkLabel(
-            form_frame,
-            text=f"{location_label} *",
-            font=ctk.CTkFont(size=14, weight="bold"),
-            text_color="#374151"
-        ).pack(anchor="w", pady=(0, 5))
-        
-        self.location_entry = ctk.CTkEntry(
-            form_frame,
-            placeholder_text=f"{location_label} du mouvement",
-            fg_color="#F3F4F6",
-            border_width=0,
-            corner_radius=8,
-            height=38,
-            font=ctk.CTkFont(size=14)
-        )
-        self.location_entry.pack(fill="x", pady=(0, 15))
-        
+        ctk.CTkLabel(form_frame, text="Référence", font=ctk.CTkFont(size=14), text_color="#374151").pack(anchor="w", pady=(0, 4))
+        self.ref_entry = ctk.CTkEntry(form_frame, placeholder_text="Référence", fg_color="#F3F4F6", text_color="#111827", border_width=1, border_color="#D1D5DB", height=38, corner_radius=8)
+        self.ref_entry.pack(fill="x", pady=(0, 10))
+
+        # Origine
+        ctk.CTkLabel(form_frame, text="Origine", font=ctk.CTkFont(size=14), text_color="#374151").pack(anchor="w", pady=(0, 4))
+        self.origine_entry = ctk.CTkEntry(form_frame, placeholder_text="Origine", fg_color="#F3F4F6", text_color="#111827", border_width=1, border_color="#D1D5DB", height=38, corner_radius=8)
+        self.origine_entry.pack(fill="x", pady=(0, 10))
+
+        # Responsable
+        ctk.CTkLabel(form_frame, text="Responsable", font=ctk.CTkFont(size=14), text_color="#374151").pack(anchor="w", pady=(0, 4))
+        self.resp_entry = ctk.CTkEntry(form_frame, placeholder_text="Responsable", fg_color="#F3F4F6", text_color="#111827", border_width=1, border_color="#D1D5DB", height=38, corner_radius=8)
+        self.resp_entry.pack(fill="x", pady=(0, 10))
+        # Pré-remplir si possible
+        if hasattr(self.parent, 'user_info') and self.parent.user_info.get('prenom'):
+            self.resp_entry.insert(0, self.parent.user_info['prenom'])
+
         # Commentaire
-        ctk.CTkLabel(
-            form_frame,
-            text="Commentaire",
-            font=ctk.CTkFont(size=14, weight="bold"),
-            text_color="#374151"
-        ).pack(anchor="w", pady=(0, 5))
-        
-        self.comment_text = ctk.CTkTextbox(
-            form_frame,
-            fg_color="#F3F4F6",
-            border_width=0,
-            corner_radius=8,
-            height=80,
-            font=ctk.CTkFont(size=14)
-        )
-        self.comment_text.pack(fill="x", pady=(0, 20))
-        
-        # Responsable (info)
-        resp_frame = ctk.CTkFrame(form_frame, fg_color="#F3F4F6", corner_radius=8)
-        resp_frame.pack(fill="x", pady=(0, 20))
-        
-        resp_content = ctk.CTkFrame(resp_frame, fg_color="transparent")
-        resp_content.pack(fill="x", padx=15, pady=10)
-        
-        ctk.CTkLabel(
-            resp_content,
-            text="Responsable:",
-            font=ctk.CTkFont(size=12),
-            text_color="#6B7280"
-        ).pack(side="left")
-        
-        user_name = f"{self.parent.user_info['prenom']} {self.parent.user_info['nom']}"
-        ctk.CTkLabel(
-            resp_content,
-            text=user_name,
-            font=ctk.CTkFont(size=14, weight="bold"),
-            text_color="#111827"
-        ).pack(side="left", padx=(10, 0))
-        
-        # Boutons d'action
-        button_frame = ctk.CTkFrame(self, fg_color="white", height=70)
-        button_frame.pack(fill="x", side="bottom")
-        button_frame.pack_propagate(False)
-        
-        button_content = ctk.CTkFrame(button_frame, fg_color="transparent")
-        button_content.pack(expand=True)
-        
-        # Bouton Annuler
-        cancel_btn = ctk.CTkButton(
-            button_content,
-            text="Annuler",
-            fg_color="#E5E7EB",
-            hover_color="#D1D5DB",
-            text_color="#374151",
-            corner_radius=8,
-            height=38,
-            width=120,
-            font=ctk.CTkFont(size=14, weight="bold"),
-            command=self.destroy
-        )
-        cancel_btn.pack(side="left", padx=10)
-        
-        # Bouton Valider
-        validate_color = "#10B981" if self.movement_type == "Entrée" else "#EF4444"
-        validate_hover = "#059669" if self.movement_type == "Entrée" else "#DC2626"
-        
-        validate_btn = ctk.CTkButton(
-            button_content,
-            text=f"Valider la {self.movement_type}",
-            fg_color=validate_color,
-            hover_color=validate_hover,
-            text_color="white",
-            corner_radius=8,
-            height=38,
-            width=180,
-            font=ctk.CTkFont(size=14, weight="bold"),
-            command=self._validate_movement
-        )
-        validate_btn.pack(side="left", padx=10)
-        
+        ctk.CTkLabel(form_frame, text="Commentaire", font=ctk.CTkFont(size=14), text_color="#374151").pack(anchor="w", pady=(0, 4))
+        self.comment_entry = ctk.CTkEntry(form_frame, placeholder_text="Commentaire", fg_color="#F3F4F6", text_color="#111827", border_width=1, border_color="#D1D5DB", height=38, corner_radius=8)
+        self.comment_entry.pack(fill="x", pady=(0, 10))
+
+        # Erreur
+        self.error_label = ctk.CTkLabel(form_frame, text="", text_color="#DC2626", font=ctk.CTkFont(size=12))
+        self.error_label.pack(anchor="w", pady=(2,0))
+
+        # Boutons
+        btn_frame = ctk.CTkFrame(form_frame, fg_color="transparent")
+        btn_frame.pack(fill="x", pady=(10, 0))
+        ctk.CTkButton(btn_frame, text="Annuler", command=self.destroy, height=40, fg_color="#E5E7EB", text_color="#374151", hover_color="#D1D5DB", corner_radius=8, font=ctk.CTkFont(size=14, weight="bold")).pack(side="left", expand=True, padx=(0, 5))
+        ctk.CTkButton(btn_frame, text="Valider", command=self._validate_and_save, height=40, fg_color="#10B981", hover_color="#059669", corner_radius=8, font=ctk.CTkFont(size=14, weight="bold")).pack(side="left", expand=True, padx=(5, 0))
+
+    def _validate_and_save(self):
+        produit = self.product_var.get() if hasattr(self, 'product_var') else None
+        quantite = self.qty_entry.get().strip()
+        reference = self.ref_entry.get().strip()
+        origine = self.origine_entry.get().strip()
+        responsable = self.resp_entry.get().strip()
+        commentaire = self.comment_entry.get().strip()
+        # Validation
+        if not produit:
+            self.error_label.configure(text="Produit obligatoire")
+            return
+        if not quantite.isdigit() or int(quantite) <= 0:
+            self.error_label.configure(text="Quantité invalide")
+            return
+        if not responsable:
+            self.error_label.configure(text="Responsable obligatoire")
+            return
+        # Insertion en base
+        try:
+            import psycopg2, datetime
+            conn = psycopg2.connect(**PG_CONN)
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT INTO sge_cre.mouvements (type, produit_nom, quantite, reference, origine, responsable, date_mouvement, commentaire, statut)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ''', (
+                self.movement_type,
+                produit,
+                int(quantite),
+                reference,
+                origine,
+                responsable,
+                datetime.datetime.now(),
+                commentaire,
+                'Complété'
+            ))
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            self.error_label.configure(text=f"Erreur base : {e}")
+            return
+        self.parent._refresh_movements_table()
+        self.destroy()
+        # Message de succès
+        import tkinter.messagebox as messagebox
+        messagebox.showinfo("Succès", "Mouvement ajouté avec succès !")
+
     def _get_products_list(self):
         """Récupère la liste des produits depuis la base"""
         conn = psycopg2.connect(**PG_CONN)
@@ -975,123 +880,104 @@ class MovementModal(ctk.CTkToplevel):
             ]
         
         return products
-    
-    def _on_product_selected(self, choice):
-        """Gère la sélection d'un produit"""
-        # Extraire le code produit
-        product_code = choice.split(" - ")[0]
-        
-        # Récupérer le stock actuel
-        conn = psycopg2.connect(**PG_CONN)
-        cursor = conn.cursor()
-        
-        cursor.execute("SELECT stock FROM sge_cre.products WHERE code = %s", (product_code,))
-        result = cursor.fetchone()
-        
-        if result:
-            stock = result[0]
-        else:
-            stock = 100  # Valeur par défaut
-        
-        conn.close()
-        
-        self.stock_label.configure(text=f"{stock} unités")
-        
-    def _validate_movement(self):
-        """Valide et enregistre le mouvement"""
-        # Récupérer les valeurs
-        product = self.product_var.get()
-        quantity = self.quantity_entry.get()
-        reference = self.reference_entry.get()
-        location = self.location_entry.get()
-        comment = self.comment_text.get("1.0", "end-1c")
-        
-        # Validation
-        if not product or product == "":
-            messagebox.showerror("Erreur", "Veuillez sélectionner un produit")
+
+
+class ExportPopup(ctk.CTkToplevel):
+    def __init__(self, parent, get_data_callback):
+        super().__init__(parent)
+        self.title("Exporter les mouvements")
+        self.geometry("400x260")
+        self.configure(fg_color="white")
+        self.grab_set()
+        ctk.CTkLabel(self, text="📤 Exporter les mouvements", font=ctk.CTkFont(size=20, weight="bold"), text_color="#2563eb").pack(pady=(18, 8))
+        ctk.CTkLabel(self, text="Choisissez le format d'export :", font=ctk.CTkFont(size=14), text_color="#374151").pack(pady=(0, 12))
+        btn_frame = ctk.CTkFrame(self, fg_color="transparent")
+        btn_frame.pack(pady=5)
+        ctk.CTkButton(btn_frame, text="CSV", command=lambda: self._do_export('csv'), fg_color="#3B82F6", width=90).pack(side="left", padx=8)
+        ctk.CTkButton(btn_frame, text="Excel", command=lambda: self._do_export('xlsx'), fg_color="#059669", width=90).pack(side="left", padx=8)
+        ctk.CTkButton(btn_frame, text="PDF", command=lambda: self._do_export('pdf'), fg_color="#F59E0B", width=90).pack(side="left", padx=8)
+        ctk.CTkButton(self, text="Annuler", command=self.destroy, fg_color="#E5E7EB", text_color="#374151", hover_color="#D1D5DB", corner_radius=8, font=ctk.CTkFont(size=14), width=120).pack(pady=(18, 0))
+        self.get_data_callback = get_data_callback
+        self.success_label = ctk.CTkLabel(self, text="", text_color="#059669", font=ctk.CTkFont(size=13, weight="bold"))
+        self.success_label.pack(pady=(10,0))
+        self.open_folder_btn = None
+        self.exported_file = None
+
+    def _do_export(self, fmt):
+        import pandas as pd, os, sys
+        from datetime import datetime
+        from matplotlib.backends.backend_pdf import PdfPages
+        import matplotlib.pyplot as plt
+        from tkinter import Toplevel
+        data = self.get_data_callback()
+        if not data:
+            self.success_label.configure(text="Aucun mouvement à exporter.", text_color="#DC2626")
             return
-            
-        if not quantity or not quantity.isdigit() or int(quantity) <= 0:
-            messagebox.showerror("Erreur", "Veuillez entrer une quantité valide")
-            return
-            
-        if not location:
-            messagebox.showerror("Erreur", f"Veuillez entrer {'l\'origine' if self.movement_type == 'Entrée' else 'la destination'}")
-            return
-        
-        # Enregistrer le mouvement
+        df = pd.DataFrame(data)
+        # Renommer joliment les colonnes
+        col_map = {
+            'id': 'ID', 'type': 'Type', 'produit_nom': 'Produit', 'quantite': 'Quantité', 'reference': 'Référence',
+            'origine': 'Origine', 'destination': 'Destination', 'responsable': 'Responsable', 'date_mouvement': 'Date',
+            'commentaire': 'Commentaire', 'statut': 'Statut'
+        }
+        df = df.rename(columns={k: v for k, v in col_map.items() if k in df.columns})
+        now = datetime.now().strftime("%Y%m%d_%H%M%S")
+        downloads = os.path.join(os.path.expanduser('~'), 'Downloads')
+        filename = os.path.join(downloads, f"mouvements_{now}.{fmt}")
         try:
-            conn = psycopg2.connect(**PG_CONN)
-            cursor = conn.cursor()
-            
-            # Extraire le nom du produit
-            product_name = product.split(" - ")[1] if " - " in product else product
-            
-            cursor.execute("""
-                INSERT INTO mouvements (
-                    type, produit_nom, quantite, reference, 
-                    origine, destination, responsable, 
-                    date_mouvement, commentaire
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-            """, (
-                self.movement_type,
-                product_name,
-                int(quantity),
-                reference or f"AUTO-{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}",
-                location if self.movement_type == "Entrée" else None,
-                location if self.movement_type == "Sortie" else None,
-                f"{self.parent.user_info['prenom']} {self.parent.user_info['nom']}",
-                datetime.datetime.now(),
-                comment
-            ))
-            
-            # Mettre à jour le stock si table products existe
-            try:
-                product_code = product.split(" - ")[0]
-                if self.movement_type == "Entrée":
-                    cursor.execute("UPDATE sge_cre.products SET stock = stock + %s WHERE code = %s", (int(quantity), product_code))
-                else:
-                    cursor.execute("UPDATE sge_cre.products SET stock = stock - %s WHERE code = %s", (int(quantity), product_code))
-            except:
-                pass
-            
-            conn.commit()
-            conn.close()
-            
-            # Afficher le succès
-            self._show_success()
-            
-            # Rafraîchir le tableau parent
-            self.parent._refresh_movements_table()
-            
-            # Fermer la modale après un délai
-            self.after(1500, self.destroy)
-            
+            if fmt == 'csv':
+                df.to_csv(filename, index=False, encoding='utf-8-sig')
+            elif fmt == 'xlsx':
+                with pd.ExcelWriter(filename, engine='xlsxwriter') as writer:
+                    df.to_excel(writer, index=False, sheet_name='Mouvements')
+                    workbook = writer.book
+                    worksheet = writer.sheets['Mouvements']
+                    header_format = workbook.add_format({'bold': True, 'bg_color': '#F3F4F6', 'font_color': '#222222'})
+                    for col_num, value in enumerate(df.columns.values):
+                        worksheet.write(0, col_num, value, header_format)
+            elif fmt == 'pdf':
+                with PdfPages(filename) as pdf:
+                    fig, ax = plt.subplots(figsize=(12, min(0.5*len(df)+2, 15)))
+                    ax.axis('tight')
+                    ax.axis('off')
+                    the_table = ax.table(cellText=df.values, colLabels=df.columns, loc='center', cellLoc='center')
+                    the_table.auto_set_font_size(False)
+                    the_table.set_fontsize(10)
+                    the_table.scale(1.2, 1.2)
+                    for (row, col), cell in the_table.get_celld().items():
+                        if row == 0:
+                            cell.set_fontsize(12)
+                            cell.set_text_props(weight='bold', color='#222222')
+                            cell.set_facecolor('#F3F4F6')
+                        else:
+                            cell.set_facecolor('#fff')
+                    pdf.savefig(fig, bbox_inches='tight')
+                    plt.close(fig)
+            self._show_success_popup(filename)
+            self.exported_file = filename
         except Exception as e:
-            messagebox.showerror("Erreur", f"Erreur lors de l'enregistrement : {str(e)}")
-    
-    def _show_success(self):
-        """Affiche un message de succès"""
-        # Frame de succès
-        success_frame = ctk.CTkFrame(self, fg_color="#10B981", corner_radius=0)
-        success_frame.place(x=0, y=0, relwidth=1, relheight=1)
-        
-        # Contenu
-        content = ctk.CTkFrame(success_frame, fg_color="transparent")
-        content.place(relx=0.5, rely=0.5, anchor="center")
-        
-        # Icône
-        ctk.CTkLabel(
-            content,
-            text="✅",
-            font=ctk.CTkFont(size=72),
-            text_color="white"
-        ).pack()
-        
-        # Message
-        ctk.CTkLabel(
-            content,
-            text=f"{self.movement_type} enregistrée avec succès !",
-            font=ctk.CTkFont(size=20, weight="bold"),
-            text_color="white"
-        ).pack(pady=(20, 0))
+            self.success_label.configure(text=f"Erreur export : {e}", text_color="#DC2626")
+
+    def _show_success_popup(self, filename):
+        popup = Toplevel(self)
+        popup.title("Export réussi")
+        popup.geometry("420x180")
+        popup.configure(bg="#f0fdf4")
+        popup.grab_set()
+        import tkinter as tk
+        tk.Label(popup, text="✅", font=("Arial", 48), fg="#22c55e", bg="#f0fdf4").pack(pady=(18,0))
+        tk.Label(popup, text="Exportation réussie !", font=("Arial", 16, "bold"), fg="#166534", bg="#f0fdf4").pack(pady=(5,0))
+        tk.Label(popup, text=filename, font=("Arial", 11), fg="#166534", bg="#f0fdf4", wraplength=400).pack(pady=(5,0))
+        def open_folder():
+            folder = os.path.dirname(filename)
+            try:
+                if sys.platform == 'win32':
+                    os.startfile(folder)
+                elif sys.platform == 'darwin':
+                    os.system(f'open "{folder}"')
+                else:
+                    os.system(f'xdg-open "{folder}"')
+            except Exception as e:
+                print(f"Erreur ouverture dossier : {e}")
+        tk.Button(popup, text="Ouvrir le dossier", command=open_folder, bg="#22c55e", fg="white", font=("Arial", 12, "bold"), relief="flat", padx=16, pady=6).pack(pady=12)
+        tk.Button(popup, text="Fermer", command=popup.destroy, bg="#E5E7EB", fg="#374151", font=("Arial", 12), relief="flat", padx=12, pady=4).pack()

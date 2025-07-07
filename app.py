@@ -407,7 +407,7 @@ class App(ctk.CTk):
             if self.current_frame and hasattr(self.current_frame, 'apply_theme'):
                 self.current_frame.apply_theme(theme)
             
-            # Appliquer le thème à tous les widgets enfants de manière récursive
+            # Appliquer le thème à tous les widgets enfants de manière récursivev
             self._apply_theme_recursive(self, theme)
             
             # Forcer le rafraîchissement
