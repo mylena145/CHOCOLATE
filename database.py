@@ -3,9 +3,10 @@ def add_product(product_data):
     conn = psycopg2.connect(**PG_CONN)
     cursor = conn.cursor()
     cursor.execute("""
-        INSERT INTO sge_cre.produits (nom, description, marque, modele, fournisseur, date_fabrique, date_peremption, stock, alert)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        INSERT INTO sge_cre.produits (id_produit, nom, description, marque, modele, fournisseur, date_fabrique, date_peremption, stock, alert)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
     """, (
+        product_data.get("id"),
         product_data.get("name"),
         product_data.get("description"),
         product_data.get("brand"),

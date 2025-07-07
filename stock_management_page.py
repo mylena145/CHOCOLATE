@@ -273,6 +273,12 @@ class StockManagementFrame(ctk.CTkFrame):
         return products
 
     def refresh_product_list(self):
+        # Toujours recharger les produits depuis la base pour refléter l'état réel
+        self.products = self._reload_products()
+        filtered_products = self.get_filtered_products()
+        total_pages = max(1, (len(filtered_products) - 1) // self.items_per_page + 1)
+        if self.current_page > total_pages:
+            self.current_page = total_pages
         for widget in self.product_list_container.winfo_children():
             widget.destroy()
         self.create_product_list(self.product_list_container)
@@ -577,180 +583,154 @@ class BasePopup(ctk.CTkToplevel):
 
 class AddProductPopup(BasePopup):
     def __init__(self, master=None):
-        super().__init__(master, title="Ajouter un Nouveau Produit", geometry="600x550")
+        super().__init__(master, title="Ajouter un Nouveau Produit", geometry="600x400")
         self.master = master
+        # Ajout d'un scrollable frame
+        self.scroll_frame = ctk.CTkScrollableFrame(self.content_frame, fg_color="transparent")
+        self.scroll_frame.pack(fill="both", expand=True)
         self.create_form()
 
     def create_form(self):
-        # Ligne 0 : ID Produit (optionnel)
-        row0 = ctk.CTkFrame(self.content_frame, fg_color="transparent")
-        row0.pack(fill="x", pady=(0, 15))
-        self.create_entry_group(row0, "id_entry", "ID Produit (optionnel)", "", side="left")
-
-        # Ligne 1: Nom et Code Produit
-        row1 = ctk.CTkFrame(self.content_frame, fg_color="transparent")
-        row1.pack(fill="x", pady=(0, 15))
-        self.create_entry_group(row1, "nom_entry", "Nom du Produit *", "Souris Optique Dell", side="left")
-        self.create_entry_group(row1, "code_entry", "Code Produit *", "DELL-MS116", side="right")
-
-        # Ligne 2: Marque et Référence
-        row2 = ctk.CTkFrame(self.content_frame, fg_color="transparent")
-        row2.pack(fill="x", pady=(0, 15))
-        self.create_entry_group(row2, "brand_entry", "Marque *", "Dell", side="left")
-        self.create_entry_group(row2, "sub_entry", "Référence/Modèle *", "MS116", side="right")
-
-        # Ligne 3: Stock et Seuil d'alerte
-        row3 = ctk.CTkFrame(self.content_frame, fg_color="transparent")
-        row3.pack(fill="x", pady=(0, 15))
-        self.create_entry_group(row3, "stock_entry", "Stock Initial *", "50", side="left")
-        self.create_entry_group(row3, "alert_entry", "Seuil d'Alerte *", "10", side="right")
-
-        # Ligne 4: Emplacement et Fournisseur
-        row4 = ctk.CTkFrame(self.content_frame, fg_color="transparent")
-        row4.pack(fill="x", pady=(0, 15))
-        self.create_entry_group(row4, "loc_entry", "Emplacement de Stockage *", "E0-A1-01", side="left")
-        self.create_entry_group(row4, "fournisseur_entry", "Fournisseur", "Inconnu", side="right")
-
-        # Ligne 5: Description
-        row5 = ctk.CTkFrame(self.content_frame, fg_color="transparent")
-        row5.pack(fill="x", pady=(0, 15))
-        self.create_entry_group(row5, "description_entry", "Description", "Aucune description", side="left")
-
-        # Ligne 6: Dates
-        row6 = ctk.CTkFrame(self.content_frame, fg_color="transparent")
-        row6.pack(fill="x", pady=(0, 15))
-        self.create_entry_group(row6, "date_fabrique_entry", "Date de fabrication (YYYY-MM-DD)", "", side="left")
-        self.create_entry_group(row6, "date_peremption_entry", "Date de péremption (YYYY-MM-DD)", "", side="right")
-
+        # Ligne 0: ID du produit
+        row0 = ctk.CTkFrame(self.scroll_frame, fg_color="transparent")
+        row0.pack(fill="x", pady=(0, 10))
+        self.create_entry_group(row0, "id_entry", "ID du produit *", "PRD6", side="left")
+        # Ligne 1: Nom du produit, Référence/Modèle, Marque
+        row1 = ctk.CTkFrame(self.scroll_frame, fg_color="transparent")
+        row1.pack(fill="x", pady=(0, 10))
+        self.create_entry_group(row1, "name_entry", "Nom du produit *", "Imprimante laser", side="left")
+        self.create_entry_group(row1, "sub_entry", "Référence / Modèle *", "LaserJet MFP 137fnw", side="left")
+        self.create_entry_group(row1, "brand_entry", "Marque *", "HP", side="left")
+        # Ligne 2: Stock, Seuil d'alerte, Emplacement
+        row2 = ctk.CTkFrame(self.scroll_frame, fg_color="transparent")
+        row2.pack(fill="x", pady=(0, 10))
+        self.create_entry_group(row2, "stock_entry", "Stock *", "10", side="left")
+        self.create_entry_group(row2, "alert_entry", "Seuil d'alerte *", "2", side="left")
+        self.create_entry_group(row2, "loc_entry", "Emplacement *", "HP Inc.", side="left")
+        # Ligne 3: Date de fabrication, Date de péremption
+        row3 = ctk.CTkFrame(self.scroll_frame, fg_color="transparent")
+        row3.pack(fill="x", pady=(0, 10))
+        self.create_entry_group(row3, "date_fabrique_entry", "Date de fabrication", "2023-01-01", side="left")
+        self.create_entry_group(row3, "date_peremption_entry", "Date de péremption", "2026-01-01", side="left")
+        # Ligne 4: Description (champ large)
+        row4 = ctk.CTkFrame(self.scroll_frame, fg_color="transparent")
+        row4.pack(fill="x", pady=(0, 10))
+        label = ctk.CTkLabel(row4, text="Description", font=ctk.CTkFont(size=13, weight="bold"), text_color="#374151")
+        label.pack(anchor="w", pady=(0, 4))
+        self.description_entry = ctk.CTkEntry(row4, placeholder_text="Description du produit", fg_color="#F3F4F6", text_color="#111827", border_width=1, border_color="#D1D5DB", height=38, corner_radius=8, width=600)
+        self.description_entry.pack(fill="x")
+        self.description_entry_error = ctk.CTkLabel(row4, text="", text_color="#DC2626", font=ctk.CTkFont(size=12))
+        self.description_entry_error.pack(anchor="w", pady=(2,0))
         # Boutons
-        btn_frame = ctk.CTkFrame(self.content_frame, fg_color="transparent")
+        btn_frame = ctk.CTkFrame(self.scroll_frame, fg_color="transparent")
         btn_frame.pack(fill="x", pady=(10, 0), side="bottom")
         ctk.CTkButton(btn_frame, text="Annuler", command=self.confirm_cancel, height=40, fg_color="#EF5350", text_color="white", hover_color="#E53935", corner_radius=8, font=ctk.CTkFont(size=14, weight="bold")).pack(side="left", expand=True, padx=(0, 5))
         ctk.CTkButton(btn_frame, text="+ Ajouter le Produit", command=self.validate_and_add_product, height=40, fg_color="#F59E0B", hover_color="#D97706", corner_radius=8, font=ctk.CTkFont(size=14, weight="bold")).pack(side="left", expand=True, padx=(5, 0))
 
-    def confirm_cancel(self):
-        dialog = ctk.CTkToplevel(self)
-        dialog.title("Confirmation d'annulation")
-        dialog.geometry("370x180")
-        dialog.configure(fg_color='white')
-        dialog.grab_set()
-        dialog.resizable(False, False)
-        
-        ctk.CTkLabel(dialog, text="Voulez-vous vraiment annuler ?", font=ctk.CTkFont(size=16, weight='bold'), text_color='#333333').pack(pady=(28,8), padx=20)
-        ctk.CTkLabel(dialog, text="Toutes les informations saisies seront perdues.", font=ctk.CTkFont(size=13), text_color='#666666').pack(pady=(0,10), padx=20)
-        
-        btn_dialog_frame = ctk.CTkFrame(dialog, fg_color='transparent')
-        btn_dialog_frame.pack(pady=(0,18))
-        
-        ctk.CTkButton(btn_dialog_frame, text='Oui, annuler', width=140, height=38, fg_color='#EF5350', hover_color='#E53935', text_color='white', corner_radius=8, font=ctk.CTkFont(size=14, weight='bold'), command=lambda: (dialog.destroy(), self.destroy())).pack(side='left', padx=12)
-        ctk.CTkButton(btn_dialog_frame, text='Non, rester', width=120, height=38, fg_color='#90A4AE', hover_color='#78909C', text_color='white', corner_radius=8, font=ctk.CTkFont(size=14), command=dialog.destroy).pack(side='left', padx=12)
-
     def create_entry_group(self, parent, entry_name, label_text, placeholder, side):
         frame = ctk.CTkFrame(parent, fg_color="transparent")
         frame.pack(side=side, expand=True, fill="x", padx=5 if side=="right" else (0,5))
-        
         label = ctk.CTkLabel(frame, text=label_text, font=ctk.CTkFont(size=13, weight="bold"), text_color="#374151")
         label.pack(anchor="w", pady=(0, 4))
-        
         entry = ctk.CTkEntry(frame, placeholder_text=placeholder, fg_color="#F3F4F6", text_color="#111827", border_width=1, border_color="#D1D5DB", height=38, corner_radius=8)
         entry.pack(fill="x")
         setattr(self, entry_name, entry)
-        
         error_label = ctk.CTkLabel(frame, text="", text_color="#DC2626", font=ctk.CTkFont(size=12))
         error_label.pack(anchor="w", pady=(2,0))
         setattr(self, f"{entry_name}_error", error_label)
+        
+    def confirm_cancel(self):
+        self.destroy()
 
     def validate_and_add_product(self):
-        # Récupérer les valeurs du formulaire
-        id_value = self.id_entry.get().strip()
-        description = self.description_entry.get().strip() if hasattr(self, 'description_entry') else "Aucune description"
-        fournisseur = self.fournisseur_entry.get().strip() if hasattr(self, 'fournisseur_entry') else "Inconnu"
-        date_fabrique = self.date_fabrique_entry.get().strip() if hasattr(self, 'date_fabrique_entry') else None
-        date_peremption = self.date_peremption_entry.get().strip() if hasattr(self, 'date_peremption_entry') else None
+        id_produit = self.id_entry.get().strip()
+        name = self.name_entry.get().strip()
+        sub = self.sub_entry.get().strip()
+        brand = self.brand_entry.get().strip()
+        stock = self.stock_entry.get().strip()
+        alert = self.alert_entry.get().strip()
+        loc = self.loc_entry.get().strip()
+        description = self.description_entry.get().strip()
+        date_fabrique = self.date_fabrique_entry.get().strip()
+        date_peremption = self.date_peremption_entry.get().strip()
+        # Validation stricte
+        is_valid = True
+        import re
+        if not id_produit:
+            self.id_entry_error.configure(text="ID requis")
+            is_valid = False
+        elif not re.match(r"^PRD\d+$", id_produit):
+            self.id_entry_error.configure(text="Format: PRD suivi d'un nombre")
+            is_valid = False
+        elif len(id_produit) > 6:
+            self.id_entry_error.configure(text="Longueur max: 6 caractères")
+            is_valid = False
+        else:
+            self.id_entry_error.configure(text="")
+        if not name:
+            self.name_entry_error.configure(text="Nom requis")
+            is_valid = False
+        else:
+            self.name_entry_error.configure(text="")
+        if not sub:
+            self.sub_entry_error.configure(text="Référence/Modèle requis")
+            is_valid = False
+        else:
+            self.sub_entry_error.configure(text="")
+        if not brand:
+            self.brand_entry_error.configure(text="Marque requise")
+            is_valid = False
+        else:
+            self.brand_entry_error.configure(text="")
+        if not stock.isdigit():
+            self.stock_entry_error.configure(text="Stock doit être un nombre")
+            is_valid = False
+        else:
+            self.stock_entry_error.configure(text="")
+        if not alert.isdigit():
+            self.alert_entry_error.configure(text="Seuil doit être un nombre")
+            is_valid = False
+        else:
+            self.alert_entry_error.configure(text="")
+        if not loc:
+            self.loc_entry_error.configure(text="Emplacement requis")
+            is_valid = False
+        else:
+            self.loc_entry_error.configure(text="")
+        if not is_valid:
+            return
+        # Vérifier unicité de l'ID
+        from database import get_all_products
+        produits = get_all_products()
+        if any(p['id'] == id_produit for p in produits):
+            self.id_entry_error.configure(text="Cet ID existe déjà !")
+            return
+        if any(p['name'] == name and p['sub'] == sub for p in produits):
+            self.sub_entry_error.configure(text="Produit déjà existant (nom + modèle)")
+            return
+        # Insertion réelle en base
         product_data = {
-            "id": int(id_value) if id_value else None,
-            "name": self.nom_entry.get(),
-            "code": self.code_entry.get(),
-            "brand": self.brand_entry.get(),
-            "sub": self.sub_entry.get(),
-            "stock": int(self.stock_entry.get()),
-            "alert": int(self.alert_entry.get()),
-            "loc": self.loc_entry.get(),
-            "description": description if description else "Aucune description",
+            "id": id_produit,
+            "name": name,
+            "sub": sub,
+            "brand": brand,
+            "stock": int(stock),
+            "alert": int(alert),
+            "loc": loc,
+            "fournisseur": loc,  # mapping pour la base
+            "description": description,
             "date_fabrique": date_fabrique if date_fabrique else None,
-            "date_peremption": date_peremption if date_peremption else None,
-            "fournisseur": fournisseur if fournisseur else "Inconnu"
+            "date_peremption": date_peremption if date_peremption else None
         }
-        # Ajout en base
-        if hasattr(self.master, '_add_product_db') and self.master._add_product_db:
-            # Si id_produit est renseigné, on l'inclut dans la requête (il faudra adapter add_product si besoin)
-            if product_data["id"] is not None:
-                from database import psycopg2, PG_CONN
-                conn = psycopg2.connect(**PG_CONN)
-                cursor = conn.cursor()
-                cursor.execute("""
-                    INSERT INTO sge_cre.produits (id_produit, nom, description, marque, modele, fournisseur, date_fabrique, date_peremption, stock, alert)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                """, (
-                    product_data["id"],
-                    product_data["name"],
-                    product_data["description"],
-                    product_data["brand"],
-                    product_data["sub"],
-                    product_data["fournisseur"],
-                    product_data["date_fabrique"],
-                    product_data["date_peremption"],
-                    product_data["stock"],
-                    product_data["alert"]
-                ))
-                conn.commit()
-                conn.close()
-            else:
+        try:
+            if hasattr(self.master, '_add_product_db') and self.master._add_product_db:
                 self.master._add_product_db(product_data)
-        # Recharger la liste depuis la base
+        except Exception as e:
+            self.id_entry_error.configure(text=f"Erreur base : {e}")
+            return
         self.master.products = self.master._reload_products()
         self.master.refresh_product_list()
         self.show_success_popup("Produit ajouté avec succès !")
-        # Réinitialisation des erreurs
-        for entry_name in ["nom_entry", "code_entry", "brand_entry", "sub_entry", "stock_entry", "alert_entry", "loc_entry"]:
-            getattr(self, f"{entry_name}_error").configure(text="")
-
-        is_valid = True
-        
-        def check_field(entry, error_label, name, is_numeric=False):
-            nonlocal is_valid
-            value = entry.get()
-            if not value:
-                error_label.configure(text=f"{name} requis")
-                is_valid = False
-            elif is_numeric and not value.isdigit():
-                error_label.configure(text="Doit être un nombre")
-                is_valid = False
-            return value
-
-        name = check_field(self.nom_entry, self.nom_entry_error, "Nom")
-        code = check_field(self.code_entry, self.code_entry_error, "Code")
-        brand = check_field(self.brand_entry, self.brand_entry_error, "Marque")
-        sub = check_field(self.sub_entry, self.sub_entry_error, "Référence")
-        stock = check_field(self.stock_entry, self.stock_entry_error, "Stock", is_numeric=True)
-        alert = check_field(self.alert_entry, self.alert_entry_error, "Seuil", is_numeric=True)
-        loc = check_field(self.loc_entry, self.loc_entry_error, "Emplacement")
-        
-        if not is_valid: return
-
-        new_id = max(p['id'] for p in self.master.products) + 1 if self.master.products else 1
-        new_product = {
-            "id": new_id, "code": code, "name": name, "sub": sub, "brand": brand,
-            "stock": int(stock), "alert": int(alert), "loc": loc, "status": "Normal"
-        }
-        
-        if new_product["stock"] <= new_product["alert"]: new_product["status"] = "Critique"
-        elif new_product["stock"] <= new_product["alert"] * 1.5: new_product["status"] = "Faible"
-
-        self.master.products.append(new_product)
-        self.master.refresh_product_list()
-        self.show_success_popup("Produit ajouté !")
-
 
 class AddLotPopup(BasePopup):
     def __init__(self, master=None):
@@ -789,18 +769,6 @@ class AddLotPopup(BasePopup):
         ctk.CTkButton(btn_frame, text="Annuler", command=self.destroy, height=40, fg_color="#E5E7EB", text_color="#374151", hover_color="#D1D5DB", corner_radius=8, font=ctk.CTkFont(size=14, weight="bold")).pack(side="left", expand=True, padx=(0, 5))
         ctk.CTkButton(btn_frame, text="🗃️ Créer le Lot", command=self.validate_and_add_lot, height=40, corner_radius=8, font=ctk.CTkFont(size=14, weight="bold")).pack(side="left", expand=True, padx=(5, 0))
     
-    def create_entry_group(self, parent, entry_name, label_text, placeholder, side):
-        frame = ctk.CTkFrame(parent, fg_color="transparent")
-        frame.pack(side=side, expand=True, fill="x", padx=5 if side=="right" else (0,5))
-        label = ctk.CTkLabel(frame, text=label_text, font=ctk.CTkFont(size=13, weight="bold"), text_color="#374151")
-        label.pack(anchor="w", pady=(0, 4))
-        entry = ctk.CTkEntry(frame, placeholder_text=placeholder, fg_color="#F3F4F6", text_color="#111827", border_width=1, border_color="#D1D5DB", height=38, corner_radius=8)
-        entry.pack(fill="x")
-        setattr(self, entry_name, entry)
-        error_label = ctk.CTkLabel(frame, text="", text_color="#DC2626", font=ctk.CTkFont(size=12))
-        error_label.pack(anchor="w", pady=(2,0))
-        setattr(self, f"{entry_name}_error", error_label)
-        
     def validate_and_add_lot(self):
         self.product_error.configure(text="")
         self.lot_entry_error.configure(text="")
