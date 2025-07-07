@@ -4,6 +4,7 @@ from responsive_utils import ThemeToggleButton
 from tkinter import messagebox
 import database
 from tkcalendar import DateEntry
+import datetime
 
 class ReceptionFrame(ctk.CTkFrame):
     def __init__(self, master, user_info=None):
@@ -1010,19 +1011,22 @@ class ExportReceptionPopup(ctk.CTkToplevel):
     def __init__(self, master=None):
         super().__init__(master)
         self.title("Exporter les Réceptions")
-        self.geometry("500x400")
-        self.resizable(True, True)  # Permettre le redimensionnement
-        self.minsize(450, 350)  # Taille minimale
+        self.geometry("600x500")
+        self.resizable(True, True)
+        self.minsize(550, 450)
         self.configure(fg_color="white")
         self.grab_set()
         self._drag_start_x = None
         self._drag_start_y = None
-        self.protocol("WM_DELETE_WINDOW", self.destroy)  # Permettre la fermeture
+        self.protocol("WM_DELETE_WINDOW", self.destroy)
+        self.master = master
 
-        # Header
+        # Header moderne avec icône
         header = ctk.CTkFrame(self, fg_color="white")
-        header.pack(fill="x", pady=(16,0), padx=18)
-        ctk.CTkLabel(header, text="Exporter les Réceptions", font=ctk.CTkFont(size=20, weight="bold"), text_color="#222").pack(side="left", pady=6)
+        header.pack(fill="x", pady=(20,0), padx=20)
+        ctk.CTkLabel(header, text="📊", font=ctk.CTkFont(size=24)).pack(side="left", padx=(0,10))
+        ctk.CTkLabel(header, text="Exporter les Réceptions", font=ctk.CTkFont(size=22, weight="bold"), text_color="#1F2937").pack(side="left")
+        
         def start_move(event):
             self._drag_start_x = event.x
             self._drag_start_y = event.y
@@ -1033,119 +1037,391 @@ class ExportReceptionPopup(ctk.CTkToplevel):
         header.bind("<Button-1>", start_move)
         header.bind("<B1-Motion>", do_move)
 
-        # Main content
+        # Main content avec design moderne
         content = ctk.CTkFrame(self, fg_color="white")
-        content.pack(fill="both", expand=True, padx=18, pady=18)
+        content.pack(fill="both", expand=True, padx=20, pady=20)
 
-        # Section 1: Contenu à exporter
-        ctk.CTkLabel(content, text="Contenu à exporter", font=ctk.CTkFont(size=16, weight="bold"), text_color="#222").pack(anchor="w", pady=(0, 10))
+        # Section 1: Contenu à exporter avec design moderne
+        section1 = ctk.CTkFrame(content, fg_color="#F8FAFC", corner_radius=12, border_width=1, border_color="#E2E8F0")
+        section1.pack(fill="x", pady=(0, 20))
+        
+        ctk.CTkLabel(section1, text="📋 Contenu à exporter", font=ctk.CTkFont(size=16, weight="bold"), text_color="#1F2937").pack(anchor="w", padx=20, pady=(15,10))
         
         self.export_choice = ctk.StringVar(value="current")
-        ctk.CTkRadioButton(content, text="Vue actuelle (avec filtres)", variable=self.export_choice, value="current", 
-                          font=ctk.CTkFont(size=14), text_color="#374151").pack(anchor="w", pady=2)
-        ctk.CTkRadioButton(content, text="Toutes les réceptions", variable=self.export_choice, value="all", 
-                          font=ctk.CTkFont(size=14), text_color="#374151").pack(anchor="w", pady=2)
+        ctk.CTkRadioButton(section1, text="Vue actuelle (avec filtres appliqués)", variable=self.export_choice, value="current", 
+                          font=ctk.CTkFont(size=14), text_color="#374151", fg_color="#3B82F6", hover_color="#2563EB").pack(anchor="w", padx=20, pady=2)
+        ctk.CTkRadioButton(section1, text="Toutes les réceptions (données complètes)", variable=self.export_choice, value="all", 
+                          font=ctk.CTkFont(size=14), text_color="#374151", fg_color="#3B82F6", hover_color="#2563EB").pack(anchor="w", padx=20, pady=(2,15))
 
-        # Section 2: Format d'export
-        ctk.CTkLabel(content, text="Format d'export", font=ctk.CTkFont(size=16, weight="bold"), text_color="#222").pack(anchor="w", pady=(20, 10))
+        # Section 2: Format d'export avec design moderne
+        section2 = ctk.CTkFrame(content, fg_color="#F8FAFC", corner_radius=12, border_width=1, border_color="#E2E8F0")
+        section2.pack(fill="x", pady=(0, 20))
         
-        format_frame = ctk.CTkFrame(content, fg_color="transparent")
-        format_frame.pack(fill="x", pady=(0, 20))
+        ctk.CTkLabel(section2, text="📄 Format d'export", font=ctk.CTkFont(size=16, weight="bold"), text_color="#1F2937").pack(anchor="w", padx=20, pady=(15,15))
         
-        # Boutons de format avec couleurs
-        csv_btn = ctk.CTkButton(format_frame, text="CSV", fg_color="#3B82F6", hover_color="#2563EB", 
+        format_frame = ctk.CTkFrame(section2, fg_color="transparent")
+        format_frame.pack(fill="x", padx=20, pady=(0,15))
+        
+        # Boutons de format avec design moderne et icônes
+        csv_btn = ctk.CTkButton(format_frame, text="📊 CSV", fg_color="#3B82F6", hover_color="#2563EB", 
                                text_color="white", font=ctk.CTkFont(size=14, weight="bold"), 
-                               corner_radius=8, height=40, width=100,
+                               corner_radius=10, height=45, width=120,
                                command=lambda: self.export_data("CSV"))
-        csv_btn.pack(side="left", padx=(0, 10))
+        csv_btn.pack(side="left", padx=(0, 15))
         
-        excel_btn = ctk.CTkButton(format_frame, text="Excel", fg_color="#10B981", hover_color="#059669", 
+        excel_btn = ctk.CTkButton(format_frame, text="📈 Excel", fg_color="#10B981", hover_color="#059669", 
                                  text_color="white", font=ctk.CTkFont(size=14, weight="bold"), 
-                                 corner_radius=8, height=40, width=100,
+                                 corner_radius=10, height=45, width=120,
                                  command=lambda: self.export_data("Excel"))
-        excel_btn.pack(side="left", padx=(0, 10))
+        excel_btn.pack(side="left", padx=(0, 15))
         
-        pdf_btn = ctk.CTkButton(format_frame, text="PDF", fg_color="#EF4444", hover_color="#DC2626", 
+        pdf_btn = ctk.CTkButton(format_frame, text="📄 PDF", fg_color="#EF4444", hover_color="#DC2626", 
                                text_color="white", font=ctk.CTkFont(size=14, weight="bold"), 
-                               corner_radius=8, height=40, width=100,
+                               corner_radius=10, height=45, width=120,
                                command=lambda: self.export_data("PDF"))
         pdf_btn.pack(side="left")
 
-        # Section 3: Options d'export
-        ctk.CTkLabel(content, text="Options", font=ctk.CTkFont(size=16, weight="bold"), text_color="#222").pack(anchor="w", pady=(0, 10))
+        # Section 3: Options d'export avec design moderne
+        section3 = ctk.CTkFrame(content, fg_color="#F8FAFC", corner_radius=12, border_width=1, border_color="#E2E8F0")
+        section3.pack(fill="x", pady=(0, 20))
+        
+        ctk.CTkLabel(section3, text="⚙️ Options d'export", font=ctk.CTkFont(size=16, weight="bold"), text_color="#1F2937").pack(anchor="w", padx=20, pady=(15,10))
         
         self.include_headers = ctk.BooleanVar(value=True)
-        ctk.CTkCheckBox(content, text="Inclure les en-têtes", variable=self.include_headers, 
-                       font=ctk.CTkFont(size=14), text_color="#374151").pack(anchor="w", pady=2)
+        ctk.CTkCheckBox(section3, text="Inclure les en-têtes de colonnes", variable=self.include_headers, 
+                       font=ctk.CTkFont(size=14), text_color="#374151", fg_color="#3B82F6", hover_color="#2563EB").pack(anchor="w", padx=20, pady=2)
         
         self.include_timestamps = ctk.BooleanVar(value=True)
-        ctk.CTkCheckBox(content, text="Inclure les horodatages", variable=self.include_timestamps, 
-                       font=ctk.CTkFont(size=14), text_color="#374151").pack(anchor="w", pady=2)
+        ctk.CTkCheckBox(section3, text="Inclure les horodatages", variable=self.include_timestamps, 
+                       font=ctk.CTkFont(size=14), text_color="#374151", fg_color="#3B82F6", hover_color="#2563EB").pack(anchor="w", padx=20, pady=2)
 
-        # Boutons d'action
+        self.include_summary = ctk.BooleanVar(value=True)
+        ctk.CTkCheckBox(section3, text="Inclure un résumé statistique", variable=self.include_summary, 
+                       font=ctk.CTkFont(size=14), text_color="#374151", fg_color="#3B82F6", hover_color="#2563EB").pack(anchor="w", padx=20, pady=(2,15))
+
+        # Boutons d'action avec design moderne
         btn_frame = ctk.CTkFrame(content, fg_color="white")
         btn_frame.pack(fill="x", pady=(20, 0))
         
-        ctk.CTkButton(btn_frame, text="Annuler", fg_color="#EF4444", hover_color="#DC2626", 
-                     text_color="white", corner_radius=12, height=44, 
-                     font=ctk.CTkFont(size=16, weight="bold"), 
-                     command=self.destroy).pack(side="left", expand=True, fill="x", padx=(0, 12))
+        ctk.CTkButton(btn_frame, text="❌ Annuler", fg_color="#6B7280", hover_color="#4B5563", 
+                     text_color="white", corner_radius=10, height=45, 
+                     font=ctk.CTkFont(size=15, weight="bold"), 
+                     command=self.destroy).pack(side="left", expand=True, fill="x", padx=(0, 10))
         
-        ctk.CTkButton(btn_frame, text="Exporter", fg_color="#10B981", hover_color="#059669", 
-                     text_color="white", corner_radius=12, height=44, 
-                     font=ctk.CTkFont(size=16, weight="bold"), 
-                     command=self.show_export_options).pack(side="left", expand=True, fill="x", padx=(12, 0))
+        ctk.CTkButton(btn_frame, text="💾 Exporter", fg_color="#10B981", hover_color="#059669", 
+                     text_color="white", corner_radius=10, height=45, 
+                     font=ctk.CTkFont(size=15, weight="bold"), 
+                     command=self.show_export_options).pack(side="left", expand=True, fill="x", padx=(10, 0))
 
     def export_data(self, format_type):
         """Exporte les données dans le format spécifié"""
         try:
-            # Simuler l'export
-            import time
-            time.sleep(1)  # Simulation du traitement
+            import os
+            import datetime
+            from tkinter import filedialog
             
-            # Afficher le message de succès
-            self.show_export_success(format_type)
+            # Récupérer les données depuis la base
+            import database
+            if self.export_choice.get() == "current":
+                # Utiliser les données filtrées actuelles
+                receptions, total_count = self.master.get_filtered_receptions()
+            else:
+                # Utiliser toutes les données
+                receptions = database.get_all_receptions()
+            
+            # Créer le nom de fichier avec timestamp
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"receptions_{timestamp}"
+            
+            # Obtenir le dossier Downloads
+            downloads_path = os.path.expanduser("~/Downloads")
+            if not os.path.exists(downloads_path):
+                downloads_path = os.path.expanduser("~/Desktop")  # Fallback
+            
+            if format_type == "CSV":
+                filepath = self.export_to_csv(receptions, downloads_path, filename)
+            elif format_type == "Excel":
+                filepath = self.export_to_excel(receptions, downloads_path, filename)
+            elif format_type == "PDF":
+                filepath = self.export_to_pdf(receptions, downloads_path, filename)
+            
+            # Afficher le message de succès avec le chemin
+            self.show_export_success(format_type, filepath)
             
         except Exception as e:
             self.show_export_error(str(e))
 
+    def export_to_csv(self, receptions, folder_path, filename):
+        """Exporte les données en CSV"""
+        import csv
+        import os
+        
+        filepath = os.path.join(folder_path, f"{filename}.csv")
+        
+        with open(filepath, 'w', newline='', encoding='utf-8') as csvfile:
+            writer = csv.writer(csvfile)
+            
+            # En-têtes
+            if self.include_headers.get():
+                headers = ["Référence", "Fournisseur", "Date prévue", "Date réception effective", "Observation", "Statut", "Magasinier"]
+                if self.include_timestamps.get():
+                    headers.append("Date d'export")
+                writer.writerow(headers)
+            
+            # Données
+            for reception in receptions:
+                row = [
+                    reception['reference'],
+                    reception['fournisseur'],
+                    str(reception['date_prevue'])[:16] if reception['date_prevue'] else '-',
+                    str(reception['date_reception_effective'])[:16] if reception['date_reception_effective'] else '-',
+                    reception['observation'] or '-',
+                    reception['statut'],
+                    reception['magasinier']
+                ]
+                if self.include_timestamps.get():
+                    row.append(datetime.datetime.now().strftime("%d/%m/%Y %H:%M"))
+                writer.writerow(row)
+            
+            # Résumé si demandé
+            if self.include_summary.get():
+                writer.writerow([])
+                writer.writerow(["RÉSUMÉ"])
+                writer.writerow(["Total réceptions", len(receptions)])
+                writer.writerow(["Réceptions en attente", len([r for r in receptions if r['statut'] == 'en_attente'])])
+                writer.writerow(["Réceptions reçues", len([r for r in receptions if r['statut'] == 'recu'])])
+        
+        return filepath
+
+    def export_to_excel(self, receptions, folder_path, filename):
+        """Exporte les données en Excel"""
+        try:
+            import pandas as pd
+            import os
+            
+            filepath = os.path.join(folder_path, f"{filename}.xlsx")
+            
+            # Préparer les données
+            data = []
+            for reception in receptions:
+                row = {
+                    "Référence": reception['reference'],
+                    "Fournisseur": reception['fournisseur'],
+                    "Date prévue": str(reception['date_prevue'])[:16] if reception['date_prevue'] else '-',
+                    "Date réception effective": str(reception['date_reception_effective'])[:16] if reception['date_reception_effective'] else '-',
+                    "Observation": reception['observation'] or '-',
+                    "Statut": reception['statut'],
+                    "Magasinier": reception['magasinier']
+                }
+                if self.include_timestamps.get():
+                    row["Date d'export"] = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
+                data.append(row)
+            
+            # Créer le DataFrame
+            df = pd.DataFrame(data)
+            
+            # Exporter avec formatage
+            with pd.ExcelWriter(filepath, engine='openpyxl') as writer:
+                df.to_excel(writer, sheet_name='Réceptions', index=False)
+                
+                # Formatage de la feuille
+                worksheet = writer.sheets['Réceptions']
+                
+                # Ajuster la largeur des colonnes
+                for column in worksheet.columns:
+                    max_length = 0
+                    column_letter = column[0].column_letter
+                    for cell in column:
+                        try:
+                            if len(str(cell.value)) > max_length:
+                                max_length = len(str(cell.value))
+                        except:
+                            pass
+                    adjusted_width = min(max_length + 2, 50)
+                    worksheet.column_dimensions[column_letter].width = adjusted_width
+                
+                # Ajouter un résumé si demandé
+                if self.include_summary.get():
+                    summary_data = {
+                        "Métrique": ["Total réceptions", "Réceptions en attente", "Réceptions reçues"],
+                        "Valeur": [
+                            len(receptions),
+                            len([r for r in receptions if r['statut'] == 'en_attente']),
+                            len([r for r in receptions if r['statut'] == 'recu'])
+                        ]
+                    }
+                    summary_df = pd.DataFrame(summary_data)
+                    summary_df.to_excel(writer, sheet_name='Résumé', index=False)
+            
+            return filepath
+            
+        except ImportError:
+            # Fallback si pandas n'est pas installé
+            return self.export_to_csv(receptions, folder_path, filename)
+
+    def export_to_pdf(self, receptions, folder_path, filename):
+        """Exporte les données en PDF"""
+        try:
+            from reportlab.lib.pagesizes import letter, A4
+            from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+            from reportlab.lib.units import inch
+            from reportlab.lib import colors
+            import os
+            
+            filepath = os.path.join(folder_path, f"{filename}.pdf")
+            
+            # Créer le document PDF
+            doc = SimpleDocTemplate(filepath, pagesize=A4)
+            story = []
+            
+            # Styles
+            styles = getSampleStyleSheet()
+            title_style = ParagraphStyle(
+                'CustomTitle',
+                parent=styles['Heading1'],
+                fontSize=18,
+                spaceAfter=30,
+                alignment=1  # Centré
+            )
+            
+            # Titre
+            title = Paragraph("Rapport des Réceptions", title_style)
+            story.append(title)
+            story.append(Spacer(1, 20))
+            
+            # Préparer les données pour le tableau
+            if self.include_headers.get():
+                headers = ["Référence", "Fournisseur", "Date prévue", "Statut", "Magasinier"]
+                data = [headers]
+            else:
+                data = []
+            
+            for reception in receptions:
+                row = [
+                    reception['reference'],
+                    reception['fournisseur'],
+                    str(reception['date_prevue'])[:10] if reception['date_prevue'] else '-',
+                    reception['statut'],
+                    reception['magasinier']
+                ]
+                data.append(row)
+            
+            # Créer le tableau
+            if data:
+                table = Table(data)
+                table.setStyle(TableStyle([
+                    ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                    ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                    ('FONTSIZE', (0, 0), (-1, 0), 12),
+                    ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                    ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+                    ('GRID', (0, 0), (-1, -1), 1, colors.black)
+                ]))
+                story.append(table)
+            
+            # Ajouter un résumé si demandé
+            if self.include_summary.get():
+                story.append(Spacer(1, 30))
+                summary_title = Paragraph("Résumé", styles['Heading2'])
+                story.append(summary_title)
+                
+                summary_data = [
+                    ["Métrique", "Valeur"],
+                    ["Total réceptions", str(len(receptions))],
+                    ["Réceptions en attente", str(len([r for r in receptions if r['statut'] == 'en_attente']))],
+                    ["Réceptions reçues", str(len([r for r in receptions if r['statut'] == 'recu']))]
+                ]
+                
+                summary_table = Table(summary_data)
+                summary_table.setStyle(TableStyle([
+                    ('BACKGROUND', (0, 0), (-1, 0), colors.lightblue),
+                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.black),
+                    ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                    ('GRID', (0, 0), (-1, -1), 1, colors.black)
+                ]))
+                story.append(summary_table)
+            
+            # Horodatage si demandé
+            if self.include_timestamps.get():
+                story.append(Spacer(1, 20))
+                timestamp = Paragraph(f"Exporté le : {datetime.datetime.now().strftime('%d/%m/%Y à %H:%M')}", styles['Normal'])
+                story.append(timestamp)
+            
+            # Générer le PDF
+            doc.build(story)
+            return filepath
+            
+        except ImportError:
+            # Fallback si reportlab n'est pas installé
+            return self.export_to_csv(receptions, folder_path, filename)
+
     def show_export_options(self):
         """Affiche les options d'export"""
-        # Ici on pourrait ajouter une logique pour déterminer quel format utiliser
         # Pour l'instant, on utilise CSV par défaut
         self.export_data("CSV")
 
-    def show_export_success(self, format_type):
-        """Affiche le message de succès d'export"""
+    def show_export_success(self, format_type, filepath):
+        """Affiche le message de succès d'export avec le chemin du fichier"""
         popup = ctk.CTkToplevel(self)
         popup.title("Export Réussi")
-        popup.geometry("320x140")
+        popup.geometry("450x200")
         popup.resizable(False, False)
         popup.configure(fg_color="#f0fdf4")
         popup.grab_set()
         
-        ctk.CTkLabel(popup, text="✅", font=ctk.CTkFont(size=40), text_color="#22c55e").pack(pady=(16,0))
-        ctk.CTkLabel(popup, text=f"Export {format_type} réussi !", font=ctk.CTkFont(size=14, weight="bold"), text_color="#166534").pack(pady=(5,0))
-        ctk.CTkButton(popup, text="OK", fg_color="#22c55e", hover_color="#16a34a", 
+        ctk.CTkLabel(popup, text="✅", font=ctk.CTkFont(size=40), text_color="#22c55e").pack(pady=(20,0))
+        ctk.CTkLabel(popup, text=f"Export {format_type} réussi !", font=ctk.CTkFont(size=16, weight="bold"), text_color="#166534").pack(pady=(5,10))
+        ctk.CTkLabel(popup, text=f"Fichier sauvegardé dans :", font=ctk.CTkFont(size=12), text_color="#374151").pack()
+        ctk.CTkLabel(popup, text=filepath, font=ctk.CTkFont(size=11), text_color="#6B7280").pack(pady=(0,15))
+        
+        btn_frame = ctk.CTkFrame(popup, fg_color="transparent")
+        btn_frame.pack(pady=(0,20))
+        
+        ctk.CTkButton(btn_frame, text="Ouvrir le dossier", fg_color="#3B82F6", hover_color="#2563EB", 
                      text_color="white", corner_radius=8, height=32, 
-                     font=ctk.CTkFont(size=13, weight="bold"), 
-                     command=lambda: (popup.destroy(), self.destroy())).pack(pady=12)
+                     font=ctk.CTkFont(size=12, weight="bold"), 
+                     command=lambda: self.open_folder(filepath)).pack(side="left", padx=5)
+        
+        ctk.CTkButton(btn_frame, text="OK", fg_color="#22c55e", hover_color="#16a34a", 
+                     text_color="white", corner_radius=8, height=32, 
+                     font=ctk.CTkFont(size=12, weight="bold"), 
+                     command=lambda: (popup.destroy(), self.destroy())).pack(side="left", padx=5)
+
+    def open_folder(self, filepath):
+        """Ouvre le dossier contenant le fichier exporté"""
+        import os
+        import subprocess
+        import platform
+        
+        folder_path = os.path.dirname(filepath)
+        
+        if platform.system() == "Windows":
+            subprocess.run(["explorer", folder_path])
+        elif platform.system() == "Darwin":  # macOS
+            subprocess.run(["open", folder_path])
+        else:  # Linux
+            subprocess.run(["xdg-open", folder_path])
 
     def show_export_error(self, error_message):
         """Affiche le message d'erreur d'export"""
         popup = ctk.CTkToplevel(self)
         popup.title("Erreur d'Export")
-        popup.geometry("320x140")
+        popup.geometry("400x180")
         popup.resizable(False, False)
         popup.configure(fg_color="#fef2f2")
         popup.grab_set()
         
-        ctk.CTkLabel(popup, text="❌", font=ctk.CTkFont(size=40), text_color="#EF4444").pack(pady=(16,0))
-        ctk.CTkLabel(popup, text="Erreur lors de l'export", font=ctk.CTkFont(size=14, weight="bold"), text_color="#DC2626").pack(pady=(5,0))
+        ctk.CTkLabel(popup, text="❌", font=ctk.CTkFont(size=40), text_color="#EF4444").pack(pady=(20,0))
+        ctk.CTkLabel(popup, text="Erreur lors de l'export", font=ctk.CTkFont(size=16, weight="bold"), text_color="#DC2626").pack(pady=(5,10))
+        ctk.CTkLabel(popup, text=error_message, font=ctk.CTkFont(size=12), text_color="#6B7280").pack(pady=(0,15))
         ctk.CTkButton(popup, text="OK", fg_color="#EF4444", hover_color="#DC2626", 
                      text_color="white", corner_radius=8, height=32, 
-                     font=ctk.CTkFont(size=13, weight="bold"), 
-                     command=popup.destroy).pack(pady=12)
+                     font=ctk.CTkFont(size=12, weight="bold"), 
+                     command=popup.destroy).pack(pady=10)
 
 class SearchReceptionPopup(ctk.CTkToplevel):
     def __init__(self, master=None):

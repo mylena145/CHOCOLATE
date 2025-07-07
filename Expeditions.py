@@ -112,8 +112,10 @@ class GestionExpeditionsApp(ctk.CTkFrame):
             self.expedition_stats = {"total": 0, "en_preparation": 0, "aujourd_hui": 0, "livrees": 0, "transporteurs": {}}
     
     def update_expeditions_display(self):
-        """Met à jour l'affichage des expéditions"""
+        """Met à jour l'affichage des expéditions en temps réel"""
         try:
+            print("🔄 Mise à jour de l'affichage des expéditions...")
+            
             # Mettre à jour les statistiques
             if hasattr(self, 'stats_frame'):
                 self.update_stats_display()
@@ -121,9 +123,28 @@ class GestionExpeditionsApp(ctk.CTkFrame):
             # Mettre à jour le tableau
             if hasattr(self, 'table_frame'):
                 self.update_table_display()
+            
+            # Mettre à jour les blocs centraux (planning et transporteurs)
+            if hasattr(self, 'central_blocks_frame'):
+                self.update_central_blocks()
+                
+            print("✅ Affichage des expéditions mis à jour avec succès")
                 
         except Exception as e:
             print(f"❌ Erreur lors de la mise à jour de l'affichage: {e}")
+    
+    def update_central_blocks(self):
+        """Met à jour les blocs centraux (planning et transporteurs)"""
+        try:
+            # Vider les blocs centraux existants
+            for widget in self.central_blocks_frame.winfo_children():
+                widget.destroy()
+            
+            # Recréer les blocs centraux avec les nouvelles données
+            self.create_central_blocks()
+            
+        except Exception as e:
+            print(f"❌ Erreur lors de la mise à jour des blocs centraux: {e}")
     
     def update_stats_display(self):
         """Met à jour l'affichage des statistiques"""
@@ -158,10 +179,26 @@ class GestionExpeditionsApp(ctk.CTkFrame):
             print(f"❌ Erreur lors de la mise à jour du tableau: {e}")
     
     def refresh_data(self):
-        """Rafraîchit les données depuis la base"""
-        self.load_expeditions_data()
-        if hasattr(self, 'master') and hasattr(self.master, 'show_notification'):
-            self.master.show_notification("Données rafraîchies avec succès")
+        """Rafraîchit les données depuis la base en temps réel"""
+        try:
+            print("🔄 Rafraîchissement des données depuis la base...")
+            
+            # Recharger les données depuis la BD
+            self.load_expeditions_data()
+            
+            # Mettre à jour complètement l'affichage
+            self.update_expeditions_display()
+            
+            # Afficher une notification de succès
+            if hasattr(self, 'master') and hasattr(self.master, 'show_notification'):
+                self.master.show_notification("✅ Données rafraîchies avec succès")
+            else:
+                print("✅ Données rafraîchies avec succès")
+                
+        except Exception as e:
+            print(f"❌ Erreur lors du rafraîchissement: {e}")
+            if hasattr(self, 'master') and hasattr(self.master, 'show_notification'):
+                self.master.show_notification("❌ Erreur lors du rafraîchissement")
     
     def _get_urgent_expeditions(self):
         """Récupère les expéditions urgentes (priorité haute ou livraison aujourd'hui)"""
@@ -675,10 +712,228 @@ class GestionExpeditionsApp(ctk.CTkFrame):
     def edit_expedition(self, expedition):
         """Modifier une expédition"""
         print(f"Modification de l'expédition: {expedition['number']}")
+        
+        # Créer une fenêtre modale
+        modal = ctk.CTkToplevel(self)
+        modal.title("Modifier l'Expédition")
+        modal.geometry("800x600")
+        modal.configure(fg_color='white')
+        modal.grab_set()
+        modal.resizable(False, False)
+        
+        # Titre
+        title_label = ctk.CTkLabel(modal, text=f"✏️ Modifier l'Expédition {expedition['number']}", font=ctk.CTkFont(size=24, weight="bold"), text_color="#1f2937")
+        title_label.pack(pady=(20, 30))
+        
+        # Frame principal avec scroll
+        main_frame = ctk.CTkScrollableFrame(modal, fg_color="transparent")
+        main_frame.pack(fill="both", expand=True, padx=20, pady=(0, 20))
+        
+        # Formulaire
+        form_frame = ctk.CTkFrame(main_frame, fg_color="white", border_width=1, border_color="#e5e7eb", corner_radius=8)
+        form_frame.pack(fill="x", pady=(0, 20))
+        
+        # Titre du formulaire
+        ctk.CTkLabel(form_frame, text="Informations de l'expédition", font=ctk.CTkFont(size=18, weight="bold"), text_color="#374151").pack(anchor="w", padx=20, pady=(20, 15))
+        
+        # Grille pour les champs
+        fields_frame = ctk.CTkFrame(form_frame, fg_color="transparent")
+        fields_frame.pack(fill="x", padx=20, pady=(0, 20))
+        
+        # Variables pour les champs (pré-remplies avec les données actuelles)
+        client_var = tk.StringVar(value=expedition.get('client', ''))
+        carrier_var = tk.StringVar(value=expedition.get('carrier', 'DHL Express'))
+        priority_var = tk.StringVar(value=expedition.get('priority', 'moyenne'))
+        weight_var = tk.StringVar(value=str(expedition.get('totalWeight', '')))
+        packages_var = tk.StringVar(value=str(expedition.get('packages', '')))
+        observation_var = tk.StringVar(value=expedition.get('observation', ''))
+        status_var = tk.StringVar(value=expedition.get('status', 'preparing'))
+        
+        # Champs du formulaire
+        fields = [
+            ("Client:", client_var, "text"),
+            ("Transporteur:", carrier_var, "combo", ["DHL Express", "Chronopost", "Colissimo", "UPS"]),
+            ("Priorité:", priority_var, "combo", ["haute", "moyenne", "basse"]),
+            ("Statut:", status_var, "combo", ["preparing", "in-transit", "delivered"]),
+            ("Poids (kg):", weight_var, "text"),
+            ("Nombre de colis:", packages_var, "text"),
+        ]
+        
+        for i, (label, var, field_type, *args) in enumerate(fields):
+            row = i // 2
+            col = i % 2
+            
+            # Label
+            ctk.CTkLabel(fields_frame, text=label, font=ctk.CTkFont(size=14, weight="bold"), text_color="#374151").grid(row=row*2, column=col, sticky="w", padx=(0, 10), pady=(15, 5))
+            
+            # Champ
+            if field_type == "text":
+                entry = ctk.CTkEntry(fields_frame, textvariable=var, width=200, height=35, font=ctk.CTkFont(size=14))
+                entry.grid(row=row*2+1, column=col, sticky="ew", padx=(0, 20), pady=(0, 15))
+            elif field_type == "combo":
+                combo = ctk.CTkOptionMenu(fields_frame, variable=var, values=args[0], width=200, height=35, font=ctk.CTkFont(size=14))
+                combo.grid(row=row*2+1, column=col, sticky="ew", padx=(0, 20), pady=(0, 15))
+            
+            fields_frame.grid_columnconfigure(col, weight=1)
+        
+        # Champ observation (pleine largeur)
+        ctk.CTkLabel(fields_frame, text="Observation:", font=ctk.CTkFont(size=14, weight="bold"), text_color="#374151").grid(row=len(fields)*2, column=0, columnspan=2, sticky="w", padx=(0, 10), pady=(15, 5))
+        observation_entry = ctk.CTkEntry(fields_frame, textvariable=observation_var, width=400, height=35, font=ctk.CTkFont(size=14))
+        observation_entry.grid(row=len(fields)*2+1, column=0, columnspan=2, sticky="ew", padx=(0, 20), pady=(0, 15))
+        
+        # Boutons d'action
+        buttons_frame = ctk.CTkFrame(modal, fg_color="transparent")
+        buttons_frame.pack(pady=(0, 20))
+        
+        def update_expedition():
+            """Mettre à jour l'expédition"""
+            if not client_var.get() or not weight_var.get() or not packages_var.get():
+                # Afficher une erreur
+                error_label = ctk.CTkLabel(modal, text="❌ Veuillez remplir tous les champs obligatoires", text_color="#ef4444", font=ctk.CTkFont(size=14))
+                error_label.pack(pady=10)
+                modal.after(3000, error_label.destroy)
+                return
+            
+            # Préparer les données pour la BD
+            expedition_data = {
+                'client': client_var.get(),
+                'reference_commande': expedition.get('trackingNumber', ''),
+                'date_livraison': expedition.get('deliveryDate', datetime.now().strftime('%Y-%m-%d')),
+                'transporteurs': carrier_var.get(),
+                'observation': observation_var.get(),
+                'liste_articles_livres': expedition.get('articles', '')
+            }
+            
+            try:
+                if DB_AVAILABLE:
+                    # Mettre à jour dans la base de données
+                    success = update_expedition(expedition['id'], expedition_data)
+                    if success:
+                        print(f"✅ Expédition mise à jour dans la BD: {expedition['number']}")
+                        # Recharger les données
+                        self.load_expeditions_data()
+                        # Mettre à jour l'affichage
+                        self.update_expeditions_display()
+                        success_msg = "✅ Expédition mise à jour avec succès !"
+                    else:
+                        print("❌ Erreur lors de la mise à jour dans la BD")
+                        success_msg = "❌ Erreur lors de la mise à jour"
+                else:
+                    # Mode démonstration
+                    self._update_local_expedition(expedition['id'], expedition_data)
+                    success_msg = "✅ Expédition mise à jour (mode démonstration)"
+                
+                # Afficher un message de succès
+                success_label = ctk.CTkLabel(modal, text=success_msg, text_color="#10b981" if "succès" in success_msg else "#ef4444", font=ctk.CTkFont(size=16, weight="bold"))
+                success_label.pack(pady=10)
+                
+                # Fermer la modal après 2 secondes
+                modal.after(2000, modal.destroy)
+                    
+            except Exception as e:
+                print(f"❌ Erreur lors de la mise à jour: {e}")
+                error_label = ctk.CTkLabel(modal, text=f"❌ Erreur: {str(e)}", text_color="#ef4444", font=ctk.CTkFont(size=14))
+                error_label.pack(pady=10)
+                modal.after(3000, error_label.destroy)
+        
+        def cancel_update():
+            """Annuler la modification"""
+            modal.destroy()
+        
+        # Boutons
+        ctk.CTkButton(buttons_frame, text="❌ Annuler", width=120, height=40, fg_color="#ef4444", hover_color="#dc2626", command=cancel_update).pack(side="left", padx=10)
+        ctk.CTkButton(buttons_frame, text="✅ Mettre à jour", width=150, height=40, fg_color="#10b981", hover_color="#059669", command=update_expedition).pack(side="left", padx=10)
 
     def delete_expedition(self, expedition):
         """Supprimer une expédition"""
         print(f"Suppression de l'expédition: {expedition['number']}")
+        
+        # Créer une fenêtre de confirmation
+        modal = ctk.CTkToplevel(self)
+        modal.title("Confirmer la suppression")
+        modal.geometry("500x300")
+        modal.configure(fg_color='white')
+        modal.grab_set()
+        modal.resizable(False, False)
+        
+        # Titre
+        title_label = ctk.CTkLabel(modal, text="🗑️ Supprimer l'Expédition", font=ctk.CTkFont(size=24, weight="bold"), text_color="#1f2937")
+        title_label.pack(pady=(20, 20))
+        
+        # Message de confirmation
+        message = f"Êtes-vous sûr de vouloir supprimer l'expédition {expedition['number']} ?\n\nCette action est irréversible."
+        message_label = ctk.CTkLabel(modal, text=message, font=ctk.CTkFont(size=16), text_color="#6b7280", justify="center")
+        message_label.pack(pady=(0, 30))
+        
+        # Détails de l'expédition
+        details_frame = ctk.CTkFrame(modal, fg_color="#f3f4f6", corner_radius=8)
+        details_frame.pack(fill="x", padx=20, pady=(0, 30))
+        
+        details_text = f"Client: {expedition.get('client', 'N/A')}\nTransporteur: {expedition.get('carrier', 'N/A')}\nStatut: {expedition.get('status', 'N/A')}"
+        details_label = ctk.CTkLabel(details_frame, text=details_text, font=ctk.CTkFont(size=14), text_color="#374151", justify="left")
+        details_label.pack(padx=15, pady=15)
+        
+        # Boutons d'action
+        buttons_frame = ctk.CTkFrame(modal, fg_color="transparent")
+        buttons_frame.pack(pady=(0, 20))
+        
+        def confirm_delete():
+            """Confirmer la suppression"""
+            try:
+                if DB_AVAILABLE:
+                    # Supprimer de la base de données
+                    success = delete_expedition(expedition['id'])
+                    if success:
+                        print(f"✅ Expédition supprimée de la BD: {expedition['number']}")
+                        # Recharger les données
+                        self.load_expeditions_data()
+                        # Mettre à jour l'affichage
+                        self.update_expeditions_display()
+                        success_msg = "✅ Expédition supprimée avec succès !"
+                    else:
+                        print("❌ Erreur lors de la suppression dans la BD")
+                        success_msg = "❌ Erreur lors de la suppression"
+                else:
+                    # Mode démonstration
+                    self._delete_local_expedition(expedition['id'])
+                    success_msg = "✅ Expédition supprimée (mode démonstration)"
+                
+                # Fermer la modal de confirmation
+                modal.destroy()
+                
+                # Afficher un message de succès
+                success_modal = ctk.CTkToplevel(self)
+                success_modal.title("Suppression terminée")
+                success_modal.geometry("400x200")
+                success_modal.configure(fg_color='white')
+                success_modal.grab_set()
+                success_modal.resizable(False, False)
+                
+                ctk.CTkLabel(success_modal, text=success_msg, text_color="#10b981" if "succès" in success_msg else "#ef4444", font=ctk.CTkFont(size=16, weight="bold")).pack(expand=True)
+                success_modal.after(2000, success_modal.destroy)
+                    
+            except Exception as e:
+                print(f"❌ Erreur lors de la suppression: {e}")
+                modal.destroy()
+                
+                # Afficher un message d'erreur
+                error_modal = ctk.CTkToplevel(self)
+                error_modal.title("Erreur")
+                error_modal.geometry("400x200")
+                error_modal.configure(fg_color='white')
+                error_modal.grab_set()
+                error_modal.resizable(False, False)
+                
+                ctk.CTkLabel(error_modal, text=f"❌ Erreur: {str(e)}", text_color="#ef4444", font=ctk.CTkFont(size=16, weight="bold")).pack(expand=True)
+                error_modal.after(3000, error_modal.destroy)
+        
+        def cancel_delete():
+            """Annuler la suppression"""
+            modal.destroy()
+        
+        # Boutons
+        ctk.CTkButton(buttons_frame, text="❌ Annuler", width=120, height=40, fg_color="#6b7280", hover_color="#4b5563", command=cancel_delete).pack(side="left", padx=10)
+        ctk.CTkButton(buttons_frame, text="🗑️ Supprimer", width=120, height=40, fg_color="#ef4444", hover_color="#dc2626", command=confirm_delete).pack(side="left", padx=10)
 
     def open_new_expedition_modal(self):
         """Ouvrir la modal de nouvelle expédition"""
@@ -775,17 +1030,19 @@ class GestionExpeditionsApp(ctk.CTkFrame):
                         print(f"✅ Expédition créée dans la BD avec l'ID: {expedition_id}")
                         # Recharger les données
                         self.load_expeditions_data()
+                        # Mettre à jour l'affichage
+                        self.update_expeditions_display()
                         success_msg = "✅ Expédition créée avec succès !"
                     else:
                         print("❌ Erreur lors de la création dans la BD")
-                        success_msg = "⚠️ Expédition créée (mode démonstration)"
+                        success_msg = "❌ Erreur lors de la création"
                 else:
                     # Mode démonstration
                     self._add_local_expedition(expedition_data)
                     success_msg = "✅ Expédition créée (mode démonstration)"
                 
                 # Afficher un message de succès
-                success_label = ctk.CTkLabel(modal, text=success_msg, text_color="#10b981", font=ctk.CTkFont(size=16, weight="bold"))
+                success_label = ctk.CTkLabel(modal, text=success_msg, text_color="#10b981" if "succès" in success_msg else "#ef4444", font=ctk.CTkFont(size=16, weight="bold"))
                 success_label.pack(pady=10)
                 
                 # Fermer la modal après 2 secondes
@@ -799,7 +1056,7 @@ class GestionExpeditionsApp(ctk.CTkFrame):
                 success_label.pack(pady=10)
                 modal.after(2000, modal.destroy)
         
-        def _add_local_expedition(self, expedition_data):
+        def _add_local_expedition(expedition_data):
             """Ajoute une expédition en mode local (démonstration)"""
             new_expedition = {
                 'id': len(self.expeditions_data) + 1,
@@ -1230,6 +1487,28 @@ class GestionExpeditionsApp(ctk.CTkFrame):
         ctk.CTkLabel(error_frame, text="❌ Erreur lors de l'affichage de la page expédition", font=ctk.CTkFont(size=20, weight="bold"), text_color="#b91c1c").pack(pady=(30, 10))
         ctk.CTkLabel(error_frame, text=message, font=ctk.CTkFont(size=15), text_color="#b91c1c").pack(pady=(0, 20))
         ctk.CTkButton(error_frame, text="🏠 Retour à l'accueil", fg_color="#2563eb", text_color="white", font=ctk.CTkFont(size=15, weight="bold"), command=self._go_back).pack(pady=10)
+
+    def _update_local_expedition(self, expedition_id, expedition_data):
+        """Met à jour une expédition en mode local (démonstration)"""
+        for i, exp in enumerate(self.expeditions_data):
+            if exp['id'] == expedition_id:
+                self.expeditions_data[i].update({
+                    'client': expedition_data['client'],
+                    'carrier': expedition_data['transporteurs'],
+                    'observation': expedition_data['observation'],
+                    'trackingNumber': expedition_data['reference_commande']
+                })
+                break
+        
+        # Mettre à jour l'affichage
+        self.update_expeditions_display()
+
+    def _delete_local_expedition(self, expedition_id):
+        """Supprime une expédition en mode local (démonstration)"""
+        self.expeditions_data = [exp for exp in self.expeditions_data if exp['id'] != expedition_id]
+        
+        # Mettre à jour l'affichage
+        self.update_expeditions_display()
 
 
 if __name__ == "__main__":

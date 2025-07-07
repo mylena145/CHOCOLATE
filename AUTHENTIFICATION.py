@@ -52,6 +52,8 @@ class AuthFrame(ctk.CTkFrame):
         self.email_frame.pack(pady=(8, 0), padx=20, fill="x")
         self.email_entry = ctk.CTkEntry(self.email_frame, placeholder_text="prenom.nom@sac.com", width=320, height=38, corner_radius=12, fg_color="#f8fafc", text_color="#1e293b", border_color="#2563eb", border_width=1)
         self.email_entry.pack(fill="x")
+        # Lier la touche Entrée au bouton de connexion
+        self.email_entry.bind("<Return>", lambda event: self.authenticate())
         self.email_error_label = ctk.CTkLabel(self.card_content, text="", font=("Segoe UI", 11), text_color="#ef4444")
         self.email_error_label.pack(anchor="w", padx=25, pady=(2, 0))
 
@@ -62,6 +64,8 @@ class AuthFrame(ctk.CTkFrame):
         self.password_frame.pack(pady=(8, 0), padx=20, fill="x")
         self.password_entry = ctk.CTkEntry(self.password_frame, fg_color="#f8fafc", placeholder_text="••••••••", width=320, height=38, show="•", corner_radius=12, text_color="#1e293b", border_color="#2563eb", border_width=1)
         self.password_entry.pack(fill="x")
+        # Lier la touche Entrée au bouton de connexion
+        self.password_entry.bind("<Return>", lambda event: self.authenticate())
         self.password_error_label = ctk.CTkLabel(self.card_content, text="", font=("Segoe UI", 11), text_color="#ef4444")
         self.password_error_label.pack(anchor="w", padx=25, pady=(2, 0))
 
