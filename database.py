@@ -1037,6 +1037,180 @@ def get_valeur_stock():
     conn.close()
     return total
 
+def get_all_receptions():
+    """Récupère tous les bons de réception avec les infos principales pour l'affichage."""
+    conn = psycopg2.connect(**PG_CONN)
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT br.id_bon_reception, br.reference_commande, br.fournisseur, br.date_reception, br.observation,
+               r.statut, r.date_reception as date_reception_effective,
+               i.nom as magasinier_nom, i.prenom as magasinier_prenom
+        FROM sge_cre.bon_receptions br
+        LEFT JOIN sge_cre.receptions r ON br.id_reception = r.id_reception
+        LEFT JOIN sge_cre.individus i ON br.id_magasinier = i.id_individu
+        ORDER BY br.date_reception DESC
+    ''')
+    rows = cursor.fetchall()
+    conn.close()
+    receptions = []
+    for row in rows:
+        receptions.append({
+            'id': row[0],
+            'reference': row[1],
+            'fournisseur': row[2],
+            'date_prevue': row[3],
+            'observation': row[4],
+            'statut': row[5],
+            'date_reception_effective': row[6],
+            'magasinier': f"{row[7]} {row[8]}" if row[7] and row[8] else "-"
+        })
+    return receptions
+
+def count_receptions_en_attente():
+    conn = psycopg2.connect(**PG_CONN)
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM sge_cre.receptions WHERE statut = 'en_attente'")
+    count = cursor.fetchone()[0]
+    conn.close()
+    return count
+
+def count_receptions_recues_aujourdhui():
+    conn = psycopg2.connect(**PG_CONN)
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM sge_cre.receptions WHERE statut = 'recu' AND DATE(date_reception) = CURRENT_DATE")
+    count = cursor.fetchone()[0]
+    conn.close()
+    return count
+
+def count_colis_total():
+    conn = psycopg2.connect(**PG_CONN)
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM sge_cre.colis")
+    count = cursor.fetchone()[0]
+    conn.close()
+    return count
+
+def count_anomalies():
+    conn = psycopg2.connect(**PG_CONN)
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM sge_cre.rapports_exceptions")
+    count = cursor.fetchone()[0]
+    conn.close()
+    return count
+
+def get_alertes_urgentes():
+    """Retourne une liste d'alertes urgentes (retards, colis endommagés, poids incorrect) pour l'affichage en temps réel."""
+    import datetime
+    conn = psycopg2.connect(**PG_CONN)
+    cursor = conn.cursor()
+    alertes = []
+    # Retards : réceptions en_attente dont la date prévue < aujourd'hui
+    cursor.execute("""
+        SELECT br.reference_commande, br.fournisseur, br.date_reception
+        FROM sge_cre.bon_receptions br
+        LEFT JOIN sge_cre.receptions r ON br.id_reception = r.id_reception
+        WHERE r.statut = 'en_attente' AND br.date_reception < CURRENT_DATE
+        ORDER BY br.date_reception ASC
+    """)
+    for ref, fournisseur, date_prev in cursor.fetchall():
+        alertes.append({
+            'type': 'retard',
+            'titre': f"❗ {ref}",
+            'sous_titre': f"Retard de {(datetime.date.today() - date_prev).days} jours" if date_prev else "Retard",
+            'couleur_bg': "#FEE2E2",
+            'couleur_txt': "#EF4444"
+        })
+    # Colis endommagés et poids incorrect : rapports_exceptions
+    cursor.execute("""
+        SELECT type_exception, produit_concerne, date
+        FROM sge_cre.rapports_exceptions
+        WHERE type_exception IN ('Erreurs', 'Incidents')
+        ORDER BY date DESC
+        LIMIT 5
+    """)
+    for type_exc, produit, date_exc in cursor.fetchall():
+        if 'poids' in produit.lower():
+            alertes.append({
+                'type': 'poids',
+                'titre': "⚖️ Poids incorrect",
+                'sous_titre': produit,
+                'couleur_bg': "#FEF3C7",
+                'couleur_txt': "#F59E42"
+            })
+        else:
+            alertes.append({
+                'type': 'endommagé',
+                'titre': "📦 Colis endommagé",
+                'sous_titre': produit,
+                'couleur_bg': "#FEF3C7",
+                'couleur_txt': "#F59E42"
+            })
+    conn.close()
+    return alertes
+
+def get_prochaines_arrivees():
+    """Retourne une liste des prochaines arrivées (réceptions prévues à venir)."""
+    conn = psycopg2.connect(**PG_CONN)
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT br.fournisseur, br.date_reception, r.statut, br.reference_commande
+        FROM sge_cre.bon_receptions br
+        LEFT JOIN sge_cre.receptions r ON br.id_reception = r.id_reception
+        WHERE r.statut IN ('en_attente', 'en_cours') AND br.date_reception >= CURRENT_DATE
+        ORDER BY br.date_reception ASC
+        LIMIT 5
+    """)
+    arrivages = []
+    for fournisseur, date_prev, statut, ref in cursor.fetchall():
+        if statut == 'en_attente':
+            color = "#22c55e"
+            status_txt = "En route"
+        elif statut == 'en_cours':
+            color = "#3B82F6"
+            status_txt = "Confirmé"
+        else:
+            color = "#6B7280"
+            status_txt = statut.capitalize()
+        arrivages.append({
+            'fournisseur': fournisseur or ref,
+            'date_prevue': date_prev,
+            'statut': status_txt,
+            'couleur': color
+        })
+    conn.close()
+    return arrivages
+
+def add_bon_reception(reference, fournisseur, date_reception, observation, nb_colis, poids_total):
+    """Ajoute un bon de réception, la réception associée, et les colis dans la base."""
+    import psycopg2
+    try:
+        conn = psycopg2.connect(**PG_CONN)
+        cursor = conn.cursor()
+        # 1. Créer la réception (statut en_attente)
+        cursor.execute(
+            "INSERT INTO sge_cre.receptions (date_reception, statut) VALUES (%s, %s) RETURNING id_reception",
+            (date_reception, 'en_attente')
+        )
+        id_reception = cursor.fetchone()[0]
+        # 2. Créer le bon de réception
+        cursor.execute(
+            "INSERT INTO sge_cre.bon_receptions (id_reception, date_reception, fournisseur, reference_commande, observation) VALUES (%s, %s, %s, %s, %s)",
+            (id_reception, date_reception, fournisseur, reference, observation)
+        )
+        # 3. Ajouter les colis associés
+        poids_par_colis = round(float(poids_total) / nb_colis, 2) if nb_colis > 0 else 0
+        for i in range(nb_colis):
+            cursor.execute(
+                "INSERT INTO sge_cre.colis (id_reception, dimension, poids, emplacement) VALUES (%s, %s, %s, %s)",
+                (id_reception, 1.0, poids_par_colis, f"Zone A{i+1}")
+            )
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"Erreur lors de l'ajout du bon de réception: {e}")
+        return False
+
 if __name__ == "__main__":
     init_database()  # Désactivé pour éviter les erreurs d'encodage
     pass 

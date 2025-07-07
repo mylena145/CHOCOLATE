@@ -2,6 +2,7 @@ import customtkinter as ctk
 from stock_management_page import SidebarFrame
 from responsive_utils import ThemeToggleButton
 from tkinter import messagebox
+import database
 
 class ReceptionFrame(ctk.CTkFrame):
     def __init__(self, master, user_info=None):
@@ -29,6 +30,8 @@ class ReceptionFrame(ctk.CTkFrame):
             self._build_topbar()
             self.create_widgets()
             self.bind("<Configure>", self._on_frame_resize)
+            self._auto_refresh_interval = 5000  # 5 secondes
+            self._auto_refresh()
         except Exception as e:
             self._show_error(str(e))
 
@@ -112,11 +115,12 @@ class ReceptionFrame(ctk.CTkFrame):
         # SUMMARY CARDS
         cards_frame = ctk.CTkFrame(scrollable, fg_color="white")
         cards_frame.pack(fill="x", padx=20, pady=(0, 10))
+        self.summary_labels = {}
         card_data = [
-            {"title": "En Attente", "value": "12", "subtitle": "À réceptionner", "icon": "⏰", "color": "#F59E42", "subcolor": "#F59E42"},
-            {"title": "Reçues Aujourd'hui", "value": "8", "subtitle": "Complétées", "icon": "✅", "color": "#10B981", "subcolor": "#10B981"},
-            {"title": "Colis Totaux", "value": "156", "subtitle": "Ce mois", "icon": "📦", "color": "#3B82F6", "subcolor": "#3B82F6"},
-            {"title": "Anomalies", "value": "3", "subtitle": "À traiter", "icon": "❗", "color": "#EF4444", "subcolor": "#EF4444"}
+            {"title": "En Attente", "key": "en_attente", "subtitle": "À réceptionner", "icon": "⏰", "color": "#F59E42", "subcolor": "#F59E42"},
+            {"title": "Reçues Aujourd'hui", "key": "recues_aujourdhui", "subtitle": "Complétées", "icon": "✅", "color": "#10B981", "subcolor": "#10B981"},
+            {"title": "Colis Totaux", "key": "colis_total", "subtitle": "Ce mois", "icon": "📦", "color": "#3B82F6", "subcolor": "#3B82F6"},
+            {"title": "Anomalies", "key": "anomalies", "subtitle": "À traiter", "icon": "❗", "color": "#EF4444", "subcolor": "#EF4444"}
         ]
         for card in card_data:
             f = ctk.CTkFrame(cards_frame, fg_color="white", corner_radius=10, border_width=1, border_color="#E5E7EB")
@@ -124,7 +128,9 @@ class ReceptionFrame(ctk.CTkFrame):
             ctk.CTkLabel(f, text=card["title"], font=ctk.CTkFont(size=15, weight="bold"), text_color="#374151").pack(anchor="w", padx=15, pady=(12,0))
             row = ctk.CTkFrame(f, fg_color="white")
             row.pack(fill="x", padx=15, pady=(0,10))
-            ctk.CTkLabel(row, text=card["value"], font=ctk.CTkFont(size=32, weight="bold"), text_color="#111827").pack(side="left")
+            value_label = ctk.CTkLabel(row, text="-", font=ctk.CTkFont(size=32, weight="bold"), text_color="#111827")
+            value_label.pack(side="left")
+            self.summary_labels[card["key"]] = value_label
             iconf = ctk.CTkFrame(row, fg_color=card["color"], width=40, height=40, corner_radius=8)
             iconf.pack(side="left", padx=(10,0))
             iconf.pack_propagate(False)
@@ -134,18 +140,15 @@ class ReceptionFrame(ctk.CTkFrame):
         # MIDDLE SECTION (Actions, Alertes, Prochaines arrivées)
         middle = ctk.CTkFrame(scrollable, fg_color="white")
         middle.pack(fill="x", padx=20, pady=(0, 10))
-        # Actions rapides
+        # 1. Actions rapides
         actions = ctk.CTkFrame(middle, fg_color="white", corner_radius=10, border_width=1, border_color="#E5E7EB")
-        actions.pack(side="left", expand=True, fill="both", padx=8, pady=8)
+        actions.pack(side="left", fill="both", expand=True, padx=(0, 12), pady=8)
         ctk.CTkLabel(actions, text="Actions Rapides", font=ctk.CTkFont(size=16, weight="bold"), text_color="#222").pack(anchor="w", padx=15, pady=(12,8))
-        
-        # Configuration des actions rapides avec couleurs et commandes
         quicks = [
             ("🚚 Réceptionner", "Scanner et valider l'arrivée", "#3B82F6", "#2563EB", self.open_scanner_popup),
             ("🔍 Rechercher", "Par numéro ou fournisseur", "#F59E0B", "#D97706", self.open_search_popup),
             ("🛡️ Vérifier", "Traiter les écarts détectés", "#10B981", "#059669", self.open_anomalies_popup)
         ]
-        
         for icon, desc, color, hover_color, command in quicks:
             btn = ctk.CTkButton(
                 actions, 
@@ -160,9 +163,9 @@ class ReceptionFrame(ctk.CTkFrame):
             )
             btn.pack(fill="x", padx=15, pady=(0,6))
             ctk.CTkLabel(actions, text=desc, font=ctk.CTkFont(size=12), text_color="#6B7280").pack(anchor="w", padx=25, pady=(0,8))
-        # Alertes urgentes
+        # 2. Alertes urgentes
         alertes = ctk.CTkFrame(middle, fg_color="white", corner_radius=10, border_width=1, border_color="#E5E7EB")
-        alertes.pack(side="left", expand=True, fill="both", padx=8, pady=8)
+        alertes.pack(side="left", fill="both", expand=True, padx=(0, 12), pady=8)
         ctk.CTkLabel(alertes, text="Alertes Urgentes", font=ctk.CTkFont(size=16, weight="bold"), text_color="#222").pack(anchor="w", padx=15, pady=(12,8))
         urg = [
             ("❗ BR-2024-045", "Retard de 2 jours", "#FEE2E2", "#EF4444"),
@@ -174,9 +177,9 @@ class ReceptionFrame(ctk.CTkFrame):
             card.pack(fill="x", padx=15, pady=(0,8))
             ctk.CTkLabel(card, text=title, font=ctk.CTkFont(size=14, weight="bold"), text_color=color).pack(anchor="w", padx=10, pady=(6,0))
             ctk.CTkLabel(card, text=sub, font=ctk.CTkFont(size=12), text_color=color).pack(anchor="w", padx=10, pady=(0,6))
-        # Prochaines arrivées
+        # 3. Prochaines arrivées
         nexts = ctk.CTkFrame(middle, fg_color="white", corner_radius=10, border_width=1, border_color="#E5E7EB")
-        nexts.pack(side="left", expand=True, fill="both", padx=8, pady=8)
+        nexts.pack(side="left", fill="both", expand=True, padx=(0, 0), pady=8)
         ctk.CTkLabel(nexts, text="Prochaines Arrivées", font=ctk.CTkFont(size=16, weight="bold"), text_color="#222").pack(anchor="w", padx=15, pady=(12,8))
         arr = [
             ("Dell Technologies", "Prévu: 15:30 - BR-2024-046", "En route", "#22c55e"),
@@ -392,76 +395,57 @@ class ReceptionFrame(ctk.CTkFrame):
         self.render_table(self.table_parent)
 
     def get_filtered_receptions(self):
-        # Données étendues avec plus d'équipements
-        all_rows = [
-            ["BR-2024-045", "Dell Technologies", "15/03/2024 14:00", "-", "0/5", "25.5kg (prévu)", ("En Attente", "#F59E42")],
-            ["BR-2024-044", "HP Enterprise", "14/03/2024 10:30", "14/03/2024 10:45", "3/3", "15.1kg", ("Reçue", "#10B981")],
-            ["BR-2024-043", "Lenovo Group", "13/03/2024 16:00", "13/03/2024 16:15", "6/8", "34.2kg", ("Partielle", "#3B82F6")],
-            ["BR-2024-042", "Samsung Electronics", "12/03/2024 09:00", "12/03/2024 09:30", "2/2", "8.3kg", ("Reçue", "#10B981")],
-            ["BR-2024-041", "Logitech International", "11/03/2024 11:30", "-", "0/12", "18.6kg (prévu)", ("Annulée", "#EF4444")],
-            ["BR-2024-040", "Cisco Systems", "10/03/2024 08:00", "10/03/2024 08:15", "4/4", "22.3kg", ("Reçue", "#10B981")],
-            ["BR-2024-039", "Microsoft Corporation", "09/03/2024 16:30", "09/03/2024 16:45", "7/7", "18.9kg", ("Reçue", "#10B981")],
-            ["BR-2024-038", "Apple Inc.", "08/03/2024 11:00", "-", "0/3", "12.7kg (prévu)", ("En Attente", "#F59E42")],
-            ["BR-2024-037", "ASUS", "07/03/2024 14:15", "07/03/2024 14:30", "5/6", "28.4kg", ("Partielle", "#3B82F6")],
-            ["BR-2024-036", "Acer", "06/03/2024 09:45", "06/03/2024 10:00", "2/2", "9.8kg", ("Reçue", "#10B981")],
-            ["BR-2024-035", "Toshiba", "05/03/2024 13:20", "05/03/2024 13:35", "3/3", "16.2kg", ("Reçue", "#10B981")],
-            ["BR-2024-034", "Canon", "04/03/2024 10:30", "04/03/2024 10:45", "1/1", "5.4kg", ("Reçue", "#10B981")],
-            ["BR-2024-033", "Epson", "03/03/2024 15:00", "-", "0/4", "14.6kg (prévu)", ("En Attente", "#F59E42")],
-            ["BR-2024-032", "Brother", "02/03/2024 12:15", "02/03/2024 12:30", "2/2", "7.9kg", ("Reçue", "#10B981")],
-            ["BR-2024-031", "Western Digital", "01/03/2024 08:45", "01/03/2024 09:00", "6/6", "31.2kg", ("Reçue", "#10B981")],
-            ["BR-2024-030", "Seagate", "29/02/2024 16:00", "29/02/2024 16:15", "4/4", "19.8kg", ("Reçue", "#10B981")],
-            ["BR-2024-029", "Kingston", "28/02/2024 11:30", "28/02/2024 11:45", "3/3", "8.5kg", ("Reçue", "#10B981")],
-            ["BR-2024-028", "Crucial", "27/02/2024 14:20", "27/02/2024 14:35", "2/2", "6.7kg", ("Reçue", "#10B981")],
-            ["BR-2024-027", "Corsair", "26/02/2024 09:15", "26/02/2024 09:30", "5/5", "24.1kg", ("Reçue", "#10B981")],
-            ["BR-2024-026", "Razer", "25/02/2024 13:45", "25/02/2024 14:00", "1/1", "3.2kg", ("Reçue", "#10B981")],
-        ]
-        
+        """Récupère les données de la base et applique le filtre et la pagination."""
+        all_rows = database.get_all_receptions()
         # Filtrage
         if self.active_filter == "Tous":
             filtered_rows = all_rows
         elif self.active_filter == "En Attente":
-            filtered_rows = [r for r in all_rows if r[6][0] == "En Attente"]
+            filtered_rows = [r for r in all_rows if r['statut'] == "en_attente"]
         elif self.active_filter == "Reçues":
-            filtered_rows = [r for r in all_rows if r[6][0] == "Reçue"]
+            filtered_rows = [r for r in all_rows if r['statut'] == "recu"]
         elif self.active_filter == "Partielles":
-            filtered_rows = [r for r in all_rows if r[6][0] == "Partielle"]
+            filtered_rows = [r for r in all_rows if r['statut'] == "partielle"]
         else:
             filtered_rows = all_rows
-        
         # Pagination
-        items_per_page = getattr(self, 'items_per_page', 10)  # Par défaut 10 éléments par page
-        current_page = getattr(self, 'current_page', 0)  # Page actuelle (0-indexed)
-        
+        items_per_page = getattr(self, 'items_per_page', 10)
+        current_page = getattr(self, 'current_page', 0)
         start_idx = current_page * items_per_page
         end_idx = start_idx + items_per_page
-        
         return filtered_rows[start_idx:end_idx], len(filtered_rows)
 
     def render_table(self, parent):
         table_frame = ctk.CTkFrame(parent, fg_color="white", corner_radius=10, border_width=1, border_color="#E5E7EB")
         table_frame.pack(fill="both", expand=True, padx=20, pady=(0, 20))
         ctk.CTkLabel(table_frame, text="Bons de Réception", font=ctk.CTkFont(size=18, weight="bold"), text_color="#111827").pack(anchor="w", padx=20, pady=(15,0))
-        
         # Conteneur principal du tableau
         table_container = ctk.CTkFrame(table_frame, fg_color="white")
         table_container.pack(fill="both", expand=True, padx=20, pady=(0,10))
-        
-        # En-têtes du tableau
-        headers = ["N° BON", "FOURNISSEUR", "DATE PRÉVUE", "DATE RÉCEPTION", "COLIS", "POIDS", "STATUT"]
-        col_widths = [120, 200, 150, 150, 80, 100, 100]  # Largeurs fixes en pixels
-        
-        # Frame pour les en-têtes
-        header_frame = ctk.CTkFrame(table_container, fg_color="#F9FAFB", height=35, corner_radius=8)
+        # En-têtes du tableau améliorés
+        headers = [
+            "Référence",
+            "Fournisseur",
+            "Date prévue",
+            "Date réception",
+            "Observation",
+            "Statut",
+            "Magasinier"
+        ]
+        col_widths = [120, 200, 150, 150, 180, 100, 140]
+        header_frame = ctk.CTkFrame(table_container, fg_color="#F1F5F9", height=38, corner_radius=8, border_width=0, border_color="#E5E7EB")
         header_frame.pack(fill="x", pady=(0, 2))
         header_frame.grid_propagate(False)
-        
-        # Création des en-têtes avec largeurs fixes
         for i, (header, width) in enumerate(zip(headers, col_widths)):
             header_cell = ctk.CTkFrame(header_frame, fg_color="transparent", width=width)
             header_cell.grid(row=0, column=i, sticky="nsew", padx=1, pady=1)
             header_cell.grid_propagate(False)
-            ctk.CTkLabel(header_cell, text=header, font=ctk.CTkFont(size=12, weight="bold"), 
-                        text_color="#6B7280").pack(expand=True, fill="both", padx=8, pady=8)
+            ctk.CTkLabel(
+                header_cell,
+                text=header,
+                font=ctk.CTkFont(size=13, weight="bold"),
+                text_color="#1e293b"
+            ).pack(expand=True, fill="both", padx=8, pady=8)
         
         # Corps du tableau avec scroll
         table_scroll = ctk.CTkScrollableFrame(table_container, fg_color="white", height=300)
@@ -478,30 +462,22 @@ class ReceptionFrame(ctk.CTkFrame):
             row_frame = ctk.CTkFrame(body_frame, fg_color="white" if row_idx % 2 == 0 else "#F9FAFB", height=20)
             row_frame.pack(fill="x", pady=0.5)
             row_frame.grid_propagate(False)
-            
-            # Création des cellules pour chaque colonne avec largeurs fixes
-            for col_idx, (val, width) in enumerate(zip(row, col_widths)):
-                if col_idx == 6:  # Colonne STATUT (badge)
-                    cell_frame = ctk.CTkFrame(row_frame, fg_color="transparent", width=width)
-                    cell_frame.pack(side="left", fill="y", padx=0.5, pady=0.5)
-                    cell_frame.pack_propagate(False)
-                    
-                    # Badge avec couleur (taille très réduite)
-                    badge = ctk.CTkLabel(cell_frame, text=val[0], 
-                                       font=ctk.CTkFont(size=10, weight="bold"), 
-                                       text_color="white", fg_color=val[1], 
-                                       corner_radius=4, padx=4, pady=1)
-                    badge.pack(expand=True, fill="both", padx=2, pady=1)
-                else:
-                    cell_frame = ctk.CTkFrame(row_frame, fg_color="transparent", width=width)
-                    cell_frame.pack(side="left", fill="y", padx=0.5, pady=0.5)
-                    cell_frame.pack_propagate(False)
-                    
-                    # Texte de la cellule (taille normale)
-                    label = ctk.CTkLabel(cell_frame, text=val, 
-                                       font=ctk.CTkFont(size=12), 
-                                       text_color="#374151")
-                    label.pack(expand=True, fill="both", padx=8, pady=1)
+            # Colonnes: référence, fournisseur, date prévue, date réception effective, observation, statut, magasinier
+            values = [
+                row['reference'],
+                row['fournisseur'],
+                str(row['date_prevue'])[:16] if row['date_prevue'] else '-',
+                str(row['date_reception_effective'])[:16] if row['date_reception_effective'] else '-',
+                row['observation'] or '-',
+                row['statut'],
+                row['magasinier']
+            ]
+            for col_idx, (val, width) in enumerate(zip(values, col_widths)):
+                cell_frame = ctk.CTkFrame(row_frame, fg_color="transparent", width=width)
+                cell_frame.pack(side="left", fill="y", padx=0.5, pady=0.5)
+                cell_frame.pack_propagate(False)
+                label = ctk.CTkLabel(cell_frame, text=val, font=ctk.CTkFont(size=12), text_color="#374151")
+                label.pack(expand=True, fill="both", padx=8, pady=1)
         
         # Pagination
         self.render_pagination(table_container, total_count)
@@ -653,6 +629,39 @@ class ReceptionFrame(ctk.CTkFrame):
         ctk.CTkLabel(error_frame, text="❌ Erreur lors de l'affichage de la page réception", font=ctk.CTkFont(size=20, weight="bold"), text_color="#b91c1c").pack(pady=(30, 10))
         ctk.CTkLabel(error_frame, text=message, font=ctk.CTkFont(size=15), text_color="#b91c1c").pack(pady=(0, 20))
         ctk.CTkButton(error_frame, text="🏠 Retour à l'accueil", fg_color="#2563eb", text_color="white", font=ctk.CTkFont(size=15, weight="bold"), command=self._go_back).pack(pady=10)
+
+    def _open_reception_modal(self):
+        """Ouvre la fenêtre modale pour créer une nouvelle réception."""
+        AddReceptionPopup(self)
+
+    def _auto_refresh(self):
+        try:
+            # Rafraîchir le tableau si visible
+            if hasattr(self, 'table_parent') and self.table_parent:
+                for widget in self.table_parent.winfo_children():
+                    widget.destroy()
+                self.render_table(self.table_parent)
+            self.update_summary_cards()
+            self.update_alertes_urgentes()
+            self.update_prochaines_arrivees()
+        except Exception:
+            pass
+        self.after(self._auto_refresh_interval, self._auto_refresh)
+
+    def update_summary_cards(self):
+        try:
+            self.summary_labels["en_attente"].configure(text=str(database.count_receptions_en_attente()))
+            self.summary_labels["recues_aujourdhui"].configure(text=str(database.count_receptions_recues_aujourdhui()))
+            self.summary_labels["colis_total"].configure(text=str(database.count_colis_total()))
+            self.summary_labels["anomalies"].configure(text=str(database.count_anomalies()))
+        except Exception as e:
+            pass
+
+    def update_alertes_urgentes(self):
+        pass
+
+    def update_prochaines_arrivees(self):
+        pass
 
 class AddReceptionPopup(ctk.CTkToplevel):
     def __init__(self, master=None):
@@ -853,10 +862,23 @@ class AddReceptionPopup(ctk.CTkToplevel):
                 label.pack(anchor="w", pady=(2, 0))
         
         if not has_errors:
-            self.create_reception_success()
-
-    def create_reception_success(self):
-        self.show_success_popup("Bon de réception créé avec succès !")
+            # Ajout réel en base
+            reference = self.bon_entry.get().strip()
+            fournisseur = self.fournisseur_menu.get()
+            date_reception = self.date_entry.get().strip()
+            observation = self.comment_text.get("0.0", "end") if hasattr(self, 'comment_text') else ''
+            nb_colis = int(self.colis_entry.get().strip())
+            poids_total = float(self.poids_entry.get().strip())
+            success = database.add_bon_reception(reference, fournisseur, date_reception, observation, nb_colis, poids_total)
+            if success:
+                self.show_success_popup("Bon de réception créé avec succès !")
+                # Rafraîchir la page principale si possible
+                if hasattr(self.master, 'render_table'):
+                    self.master.render_table(self.master.table_parent)
+                elif hasattr(self.master, 'update'):
+                    self.master.update()
+            else:
+                self._show_error("Erreur lors de l'ajout du bon de réception en base de données.")
 
     def show_success_popup(self, message="Bon de réception créé avec succès !"):
         popup = ctk.CTkToplevel(self)
