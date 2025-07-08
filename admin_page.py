@@ -49,6 +49,33 @@ except:
 import tkinter.messagebox as mbox
 
 class AdminFrame(ctk.CTkFrame):
+    
+    def get_downloads_folder(self):
+        """Obtient le dossier Téléchargements du système"""
+        import os
+        import platform
+        
+        # Essayer différents chemins selon le système d'exploitation
+        system = platform.system()
+        
+        if system == "Windows":
+            # Windows - utiliser le dossier Downloads de l'utilisateur
+            downloads_path = os.path.expanduser("~/Downloads")
+            if not os.path.exists(downloads_path):
+                downloads_path = os.path.expanduser("~/Téléchargements")
+        elif system == "Darwin":  # macOS
+            downloads_path = os.path.expanduser("~/Downloads")
+        else:  # Linux
+            downloads_path = os.path.expanduser("~/Downloads")
+            if not os.path.exists(downloads_path):
+                downloads_path = os.path.expanduser("~/Téléchargements")
+        
+        # Fallback vers le dossier exports local si le dossier téléchargements n'existe pas
+        if not os.path.exists(downloads_path):
+            downloads_path = "exports"
+        
+        return downloads_path
+
     def __init__(self, parent):
         super().__init__(parent)
         self.parent = parent
@@ -140,31 +167,29 @@ class AdminFrame(ctk.CTkFrame):
             conn = psycopg2.connect(**PG_CONN)
             cursor = conn.cursor()
             
-            # Compter les utilisateurs actifs
-            cursor.execute("SELECT COUNT(*) FROM sge_cre.individus WHERE actif = true")
+            # Compter tous les utilisateurs
+            cursor.execute("SELECT COUNT(*) FROM sge_cre.individus")
             users_actifs = cursor.fetchone()[0]
             
             # Compter les administrateurs
-            cursor.execute("SELECT COUNT(*) FROM sge_cre.individus WHERE role LIKE '%informatique%' AND actif = true")
+            cursor.execute("SELECT COUNT(*) FROM sge_cre.individus WHERE role LIKE '%informatique%'")
             admins = cursor.fetchone()[0]
             
             # Compter les responsables
-            cursor.execute("SELECT COUNT(*) FROM sge_cre.individus WHERE role LIKE '%Responsable%' AND actif = true")
+            cursor.execute("SELECT COUNT(*) FROM sge_cre.individus WHERE role LIKE '%Responsable%'")
             responsables = cursor.fetchone()[0]
             
             # Compter les utilisateurs limités (magasiniers, emballeurs, livreurs, etc.)
             cursor.execute("""
                 SELECT COUNT(*) FROM sge_cre.individus 
-                WHERE role IN ('Magasinier', 'Emballeur', 'Livreur', 'Agent de logistique', 'Garde de sécurité') 
-                AND actif = true
+                WHERE role IN ('Magasinier', 'Emballeur', 'Livreur', 'Agent de logistique', 'Garde de sécurité')
             """)
             users_limites = cursor.fetchone()[0]
             
             # Calculer les nouveaux utilisateurs ce mois
             cursor.execute("""
                 SELECT COUNT(*) FROM sge_cre.individus 
-                WHERE actif = true 
-                AND date_creation >= CURRENT_DATE - INTERVAL '30 days'
+                WHERE date_creation >= CURRENT_DATE - INTERVAL '30 days'
             """)
             nouveaux_mois = cursor.fetchone()[0]
             
@@ -432,16 +457,16 @@ class AdminFrame(ctk.CTkFrame):
             ("Téléphone", "")
         ]
         role_values = [
-            "Responsable des stocks",
-            "Magasinier",
-            "Emballeur",
-            "Responsable de la logistique",
-            "Agent de logistique",
-            "Livreur",
-            "Responsable informatique",
-            "Technicien informatique",
-            "Responsable de la sécurité physique",
-            "Garde de sécurité"
+            "Le responsable des stocks",
+            "Le magasinier",
+            "Les emballeurs",
+            "Le responsable de la logistique",
+            "Les agents de logistique",
+            "Les livreurs",
+            "Le responsable informatique",
+            "Les techniciens informatiques",
+            "Le responsable de la sécurité physique",
+            "Les gardes de sécurité"
         ]
         for label, val in champs:
             row = ctk.CTkFrame(form, fg_color="transparent")
@@ -480,70 +505,178 @@ class AdminFrame(ctk.CTkFrame):
             command=modal.destroy
         ).pack(side="left", padx=12, expand=True, fill="x")
         def save():
-            nom = entries["Nom *"].get()
-            prenom = entries["Prénom *"].get()
-            email = entries["Email *"].get()
-            role = entries["Rôle *"].get()
-            matricule = entries["Matricule *"].get()
-            valid = True
-            for err in errors.values(): err.configure(text="")
-            for field, entry in entries.items(): entry.configure(border_color="#D1D5DB")
-            # Validation des champs obligatoires
-            if not nom:
-                errors["Nom *"].configure(text="Champ obligatoire")
-                entries["Nom *"].configure(border_color="#ef4444")
-                valid = False
-            if not prenom:
-                errors["Prénom *"].configure(text="Champ obligatoire")
-                entries["Prénom *"].configure(border_color="#ef4444")
-                valid = False
-            if not email or "@" not in email:
-                errors["Email *"].configure(text="Email invalide")
-                entries["Email *"].configure(border_color="#ef4444")
-                valid = False
-            if not matricule:
-                errors["Matricule *"].configure(text="Champ obligatoire")
-                entries["Matricule *"].configure(border_color="#ef4444")
-                valid = False
-            if not role:
-                errors["Rôle *"].configure(text="Champ obligatoire")
-                entries["Rôle *"].configure(border_color="#ef4444")
-                valid = False
-            if not valid:
-                return
-            # Mise à jour utilisateur en base PostgreSQL
-            try:
-                from database import update_user
-                update_user(uid, nom, prenom, email, role, "", "", matricule)
-                modal.destroy()
-                self._refresh_users(table, search_term)
-            except Exception as e:
-                errors["Email *"].configure(text=f"Erreur : {e}")
-                entries["Email *"].configure(border_color="#ef4444")
-        ctk.CTkButton(
-            btns, text="✔ Valider", fg_color="#22c55e", hover_color="#16a34a", text_color="#fff",
-            corner_radius=10, height=44, font=ctk.CTkFont(size=16, weight="bold"),
-            command=save
-        ).pack(side="right", padx=12, expand=True, fill="x")
-
-    def _reset_user_pw(self, user, table, search_term):
-        uid = user[0]
-        modal = ctk.CTkToplevel(self)
-        modal.title("Réinitialiser le mot de passe")
-        modal.geometry("420x240")
-        modal.grab_set()
-        modal.resizable(False, False)
-        ctk.CTkLabel(modal, text="🔑 Réinitialiser le mot de passe", font=ctk.CTkFont(size=18, weight="bold"), text_color="#10b981").pack(pady=(22,8))
-        pw = ctk.CTkEntry(modal, show="*", height=36, font=ctk.CTkFont(size=13))
-        pw.pack(fill="x", padx=22, pady=10)
-        btns = ctk.CTkFrame(modal, fg_color="white")
-        btns.pack(fill="x", pady=22)
-        ctk.CTkButton(btns, text="Annuler", fg_color="#f7fafd", text_color="#222", corner_radius=8, height=38, command=modal.destroy).pack(side="left", padx=8)
-        def save():
-            reset_password(uid, pw.get())
-            modal.destroy()
-        ctk.CTkButton(btns, text="🔄 Réinitialiser", fg_color="#10b981", text_color="#fff", corner_radius=8, height=38, command=save).pack(side="right", padx=8)
-
+            # --- ÉDITION UTILISATEUR ---
+            if 'uid' in locals() or 'uid' in globals():
+                nom = entries["Nom *"].get()
+                prenom = entries["Prénom *"].get()
+                email = entries["Email *"].get()
+                role = entries["Rôle *"].get()
+                matricule = entries["Matricule *"].get()
+                valid = True
+                for err in errors.values(): err.configure(text="")
+                for field, entry in entries.items(): entry.configure(border_color="#D1D5DB")
+                # Validation des champs obligatoires
+                if not nom:
+                    errors["Nom *"].configure(text="Champ obligatoire")
+                    entries["Nom *"].configure(border_color="#ef4444")
+                    valid = False
+                if not prenom:
+                    errors["Prénom *"].configure(text="Champ obligatoire")
+                    entries["Prénom *"].configure(border_color="#ef4444")
+                    valid = False
+                if not email or "@" not in email:
+                    errors["Email *"].configure(text="Email invalide")
+                    entries["Email *"].configure(border_color="#ef4444")
+                    valid = False
+                if not matricule:
+                    errors["Matricule *"].configure(text="Champ obligatoire")
+                    entries["Matricule *"].configure(border_color="#ef4444")
+                    valid = False
+                if not role:
+                    errors["Rôle *"].configure(text="Champ obligatoire")
+                    entries["Rôle *"].configure(border_color="#ef4444")
+                    valid = False
+                if not valid:
+                    return
+                try:
+                    from database import update_user
+                    update_user(uid, nom, prenom, email, role, "", "", matricule)
+                    modal.destroy()
+                    self._refresh_users(table, search_term)
+                except Exception as e:
+                    errors["Email *"].configure(text=f"Erreur : {e}")
+                    entries["Email *"].configure(border_color="#ef4444")
+            # --- CRÉATION UTILISATEUR ---
+            else:
+                nom = entries["Nom *"].get()
+                prenom = entries["Prénom *"].get()
+                email = entries["Email *"].get()
+                matricule = entries["Matricule *"].get()
+                role = entries["Rôle *"].get()
+                mdp = entries["Mot de passe *"].get()
+                conf = entries["Confirmation *"].get()
+                adresse = entries["Adresse *"].get()
+                telephone = entries["Téléphone"].get()
+                valid = True
+                for err in errors.values(): err.configure(text="")
+                for field, entry in entries.items(): entry.configure(border_color="#D1D5DB")
+                # Validation des champs obligatoires
+                if not nom:
+                    errors["Nom *"].configure(text="Champ obligatoire")
+                    entries["Nom *"].configure(border_color="#ef4444")
+                    valid = False
+                if not prenom:
+                    errors["Prénom *"].configure(text="Champ obligatoire")
+                    entries["Prénom *"].configure(border_color="#ef4444")
+                    valid = False
+                if not email or "@" not in email:
+                    errors["Email *"].configure(text="Email invalide")
+                    entries["Email *"].configure(border_color="#ef4444")
+                    valid = False
+                if not matricule:
+                    errors["Matricule *"].configure(text="Champ obligatoire")
+                    entries["Matricule *"].configure(border_color="#ef4444")
+                    valid = False
+                if not mdp or not conf:
+                    errors["Mot de passe *"].configure(text="Champ obligatoire")
+                    errors["Confirmation *"].configure(text="Champ obligatoire")
+                    entries["Mot de passe *"].configure(border_color="#ef4444")
+                    entries["Confirmation *"].configure(border_color="#ef4444")
+                    valid = False
+                if mdp != conf:
+                    errors["Confirmation *"].configure(text="Les mots de passe ne correspondent pas")
+                    entries["Confirmation *"].configure(border_color="#ef4444")
+                    valid = False
+                if not role:
+                    errors["Rôle *"].configure(text="Champ obligatoire")
+                    entries["Rôle *"].configure(border_color="#ef4444")
+                    valid = False
+                if not adresse:
+                    errors["Adresse *"].configure(text="Champ obligatoire")
+                    entries["Adresse *"].configure(border_color="#ef4444")
+                    valid = False
+                # Validation et unicité du matricule
+                if matricule:
+                    is_valid, validation_msg = MatriculeManager.validate_matricule(matricule)
+                    if not is_valid:
+                        errors["Matricule *"].configure(text=validation_msg)
+                        entries["Matricule *"].configure(border_color="#ef4444")
+                        valid = False
+                    else:
+                        is_available, availability_msg = MatriculeManager.is_matricule_available(matricule)
+                        if not is_available:
+                            errors["Matricule *"].configure(text=availability_msg)
+                            entries["Matricule *"].configure(border_color="#ef4444")
+                            valid = False
+                        expected_role = MatriculeManager.get_role_from_matricule(matricule)
+                        if expected_role and expected_role != role:
+                            errors["Matricule *"].configure(text=f"Ce matricule correspond au rôle '{expected_role}'")
+                            entries["Matricule *"].configure(border_color="#ef4444")
+                            valid = False
+                    if not valid:
+                        return
+                try:
+                    import psycopg2, datetime
+                    conn = psycopg2.connect(**PG_CONN)
+                    cursor = conn.cursor()
+                    cursor.execute("""
+                        INSERT INTO sge_cre.individus (nom, prenom, email, password, role, matricule, adresse, telephone)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    """, (
+                        nom,
+                        prenom,
+                        email,
+                        mdp,  # mot de passe en clair (à hasher en production)
+                        role,
+                        matricule,
+                        adresse,
+                        telephone
+                    ))
+                    conn.commit()
+                    conn.close()
+                    # Popup de succès
+                    success_modal = ctk.CTkToplevel(modal)
+                    success_modal.title("🎉 Succès")
+                    success_modal.geometry("480x420")
+                    success_modal.grab_set()
+                    success_modal.resizable(False, False)
+                    success_modal.configure(fg_color="#ffffff")
+                    # Centrer la modale
+                    success_modal.update_idletasks()
+                    x = (success_modal.winfo_screenwidth() // 2) - (480 // 2)
+                    y = (success_modal.winfo_screenheight() // 2) - (420 // 2)
+                    success_modal.geometry(f"480x420+{x}+{y}")
+                    # Conteneur principal
+                    main_container = ctk.CTkFrame(success_modal, fg_color="#ffffff", corner_radius=24, border_width=3, border_color="#e5e7eb")
+                    main_container.pack(fill="both", expand=True, padx=25, pady=25)
+                    # Animation de succès
+                    success_circle = ctk.CTkFrame(main_container, fg_color="#dcfce7", corner_radius=60, width=120, height=120, border_width=3, border_color="#bbf7d0")
+                    success_circle.pack(pady=(35, 25))
+                    ctk.CTkLabel(success_circle, text="🎉", font=ctk.CTkFont(size=52), text_color="#16a34a").pack(expand=True)
+                    ctk.CTkLabel(main_container, text="🎊 Utilisateur Créé avec Succès !", font=ctk.CTkFont(size=26, weight="bold"), text_color="#1f2937").pack(pady=(0, 18))
+                    ctk.CTkLabel(main_container, text=f"✨ L'utilisateur {prenom} {nom} a été ajouté avec succès au système de gestion d'entrepôts.", font=ctk.CTkFont(size=15), text_color="#6b7280", wraplength=400).pack(pady=(0, 28))
+                    info_frame = ctk.CTkFrame(main_container, fg_color="#f8fafc", corner_radius=16, border_width=2, border_color="#e2e8f0")
+                    info_frame.pack(fill="x", padx=25, pady=(0, 28))
+                    matricule_container = ctk.CTkFrame(info_frame, fg_color="transparent")
+                    matricule_container.pack(fill="x", padx=18, pady=(15, 8))
+                    ctk.CTkLabel(matricule_container, text="🆔 Matricule", font=ctk.CTkFont(size=15, weight="bold"), text_color="#374151").pack(side="left")
+                    ctk.CTkLabel(matricule_container, text=matricule, font=ctk.CTkFont(size=20, weight="bold"), text_color="#059669").pack(side="right")
+                    role_container = ctk.CTkFrame(info_frame, fg_color="transparent")
+                    role_container.pack(fill="x", padx=18, pady=(8, 15))
+                    ctk.CTkLabel(role_container, text="👤 Rôle", font=ctk.CTkFont(size=15, weight="bold"), text_color="#374151").pack(side="left")
+                    ctk.CTkLabel(role_container, text=role, font=ctk.CTkFont(size=17), text_color="#6b7280").pack(side="right")
+                    ctk.CTkButton(main_container, text="🎯 Parfait ! Continuer", fg_color="#10b981", hover_color="#059669", text_color="white", corner_radius=16, height=52, font=ctk.CTkFont(size=17, weight="bold"), border_width=2, border_color="#34d399", command=lambda: [success_modal.destroy(), modal.destroy()]).pack(pady=(0, 25), padx=25, fill="x")
+                    success_modal.after(5000, lambda: [success_modal.destroy(), modal.destroy()])
+                except Exception as e:
+                    errors["Email *"].configure(text=f"Erreur : {e}")
+                    entries["Email *"].configure(border_color="#ef4444")
+                if hasattr(self, 'tab_contents') and "Utilisateurs" in self.tab_contents:
+                    for w in self.tab_contents["Utilisateurs"].winfo_children():
+                        w.destroy()
+                    self._build_users_tab(self.tab_contents["Utilisateurs"])
+                    self._update_stats_immediately()
+                    self._log_activity("Création", f"Création de l'utilisateur {prenom} {nom}", f"{prenom} {nom}", f"Matricule: {matricule}, Rôle: {role}")
+                
     def _confirm_delete_user(self, user, table, search_term):
         uid = user[0]
         modal = ctk.CTkToplevel(self)
@@ -559,9 +692,12 @@ class AdminFrame(ctk.CTkFrame):
         ctk.CTkButton(btns, text="Non, annuler", fg_color="#90A4AE", hover_color="#78909C", text_color="#fff", corner_radius=8, height=38, command=modal.destroy).pack(side="left", padx=12)
 
     def _delete_user(self, uid, modal, table, search_term):
-        delete_user(uid)
-        modal.destroy()
-        self._refresh_users(table, search_term)
+        try:
+            delete_user(uid)
+            modal.destroy()
+            self._refresh_users(table, search_term)
+        except Exception as e:
+            print(f"Erreur lors de la suppression de l'utilisateur : {e}")
 
     def _build_roles_tab(self, parent):
         ctk.CTkLabel(parent, text="Gestion des Rôles et Permissions", font=ctk.CTkFont(size=19, weight="bold"), text_color="#2563eb").pack(pady=(18, 2))
@@ -848,11 +984,10 @@ class AdminFrame(ctk.CTkFrame):
         
         # Tester différents rôles
         test_roles = [
-            "Administrateur",
-            "Livreur", 
-            "Magasinier",
-            "Responsable des stocks",
-            "Technicien informatique"
+            "Le responsable des stocks",
+            "Le magasinier",
+            "Les emballeurs",
+            "Le responsable de la logistique"
         ]
         
         for role in test_roles:
@@ -1620,10 +1755,8 @@ class AdminFrame(ctk.CTkFrame):
                     output.insert("end", "👋 Déconnexion du terminal...\n")
                 else:
                     output.insert("end", f"❌ Commande '{command}' non reconnue. Tapez 'help' pour l'aide.\n")
-                    
             except Exception as e:
                 output.insert("end", f"❌ Erreur: {str(e)}\n")
-            
             output.insert("end", "root@sac:~$ ")
             output.see("end")
         
@@ -1781,6 +1914,23 @@ class AdminFrame(ctk.CTkFrame):
             if action == "add" and len(args) >= 5:
                 nom, prenom, email, role = args[1], args[2], args[3], args[4]
                 
+                # Vérifier que le rôle est valide
+                valid_roles = [
+                    "Le responsable des stocks",
+                    "Le magasinier",
+                    "Les emballeurs",
+                    "Le responsable de la logistique",
+                    "Les agents de logistique",
+                    "Les livreurs",
+                    "Le responsable informatique",
+                    "Les techniciens informatiques",
+                    "Le responsable de la sécurité physique",
+                    "Les gardes de sécurité"
+                ]
+                if role not in valid_roles:
+                    output.insert("end", f"❌ Rôle '{role}' non autorisé. Rôles valides: {', '.join(valid_roles)}\n")
+                    return
+                
                 # Générer un matricule automatique
                 from matricule_manager import MatriculeManager
                 matricule = MatriculeManager.generate_matricule(role)
@@ -1798,8 +1948,8 @@ class AdminFrame(ctk.CTkFrame):
                     return
                 
                 cursor.execute("""
-                    INSERT INTO sge_cre.individus (nom, prenom, email, password, role, matricule, actif, adresse, telephone)
-                    VALUES (%s, %s, %s, %s, %s, %s, true, 'Adresse par défaut', 'Téléphone par défaut')
+                    INSERT INTO sge_cre.individus (nom, prenom, email, password, role, matricule, adresse, telephone)
+                    VALUES (%s, %s, %s, %s, %s, %s, 'Adresse par défaut', 'Téléphone par défaut')
                 """, (nom, prenom, email, "password123", role, matricule))
                 
                 conn.commit()
@@ -1855,11 +2005,30 @@ class AdminFrame(ctk.CTkFrame):
                 
                 if user:
                     # Vérifier que le champ existe
-                    allowed_fields = ['nom', 'prenom', 'email', 'role', 'actif', 'adresse', 'telephone']
+                    allowed_fields = ['nom', 'prenom', 'email', 'role', 'adresse', 'telephone']
                     if champ not in allowed_fields:
                         output.insert("end", f"❌ Champ '{champ}' non autorisé. Champs autorisés: {', '.join(allowed_fields)}\n")
                         conn.close()
                         return
+                    
+                    # Si on modifie le rôle, vérifier qu'il est valide
+                    if champ == 'role':
+                        valid_roles = [
+                            "Le responsable des stocks",
+                            "Le magasinier",
+                            "Les emballeurs",
+                            "Le responsable de la logistique",
+                            "Les agents de logistique",
+                            "Les livreurs",
+                            "Le responsable informatique",
+                            "Les techniciens informatiques",
+                            "Le responsable de la sécurité physique",
+                            "Les gardes de sécurité"
+                        ]
+                        if valeur not in valid_roles:
+                            output.insert("end", f"❌ Rôle '{valeur}' non autorisé. Rôles valides: {', '.join(valid_roles)}\n")
+                            conn.close()
+                            return
                     
                     cursor.execute(f"UPDATE sge_cre.individus SET {champ} = %s WHERE email = %s", (valeur, email))
                     conn.commit()
@@ -1881,7 +2050,7 @@ class AdminFrame(ctk.CTkFrame):
                 conn = psycopg2.connect(**PG_CONN)
                 cursor = conn.cursor()
                 
-                cursor.execute("SELECT nom, prenom, email, role, matricule, actif FROM sge_cre.individus ORDER BY nom")
+                cursor.execute("SELECT nom, prenom, email, role, matricule FROM sge_cre.individus ORDER BY nom")
                 users = cursor.fetchall()
                 
                 if users:
@@ -2125,21 +2294,21 @@ class AdminFrame(ctk.CTkFrame):
                 # Statistiques des utilisateurs
                 cursor.execute("SELECT COUNT(*) FROM sge_cre.individus")
                 total_users = cursor.fetchone()[0]
-                
-                cursor.execute("SELECT COUNT(*) FROM sge_cre.individus WHERE actif = true")
-                active_users = cursor.fetchone()[0]
-                
+
+                # Sans colonne actif, on considère tous les utilisateurs comme actifs
+                active_users = total_users
+
                 cursor.execute("SELECT role, COUNT(*) FROM sge_cre.individus GROUP BY role")
                 roles_stats = cursor.fetchall()
-                
+
                 output.insert("end", f"✅ Rapport des utilisateurs généré!\n")
                 output.insert("end", f"📊 Total utilisateurs: {total_users}\n")
                 output.insert("end", f"🟢 Utilisateurs actifs: {active_users}\n")
                 output.insert("end", f"📈 Répartition par rôle:\n")
-                
+
                 for role, count in roles_stats:
                     output.insert("end", f"   • {role}: {count} utilisateur(s)\n")
-                
+
                 # Log de l'activité
                 self._log_activity("Rapport", f"Génération rapport utilisateurs via CLI", "CLI", f"Total: {total_users}, Actifs: {active_users}")
                 
@@ -2239,145 +2408,571 @@ class AdminFrame(ctk.CTkFrame):
             import csv
             import json
             import datetime
-            
-            conn = psycopg2.connect(**PG_CONN)
-            cursor = conn.cursor()
-            
-            # Créer le dossier exports s'il n'existe pas
             import os
             if not os.path.exists("exports"):
                 os.makedirs("exports")
-            
+            # Obtenir le dossier Téléchargements du système
+            downloads_path = self.get_downloads_folder()
             timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"exports/{table}_{timestamp}.{format_export}"
-            
-            if table == "users":
-                output.insert("end", f"📤 Export des utilisateurs au format {format_export.upper()}...\n")
-                
-                cursor.execute("SELECT nom, prenom, email, role, matricule, actif, adresse, telephone FROM sge_cre.individus ORDER BY nom")
-                users = cursor.fetchall()
-                
-                if format_export == "csv":
-                    with open(filename, 'w', newline='', encoding='utf-8') as csvfile:
-                        writer = csv.writer(csvfile)
-                        writer.writerow(['Nom', 'Prénom', 'Email', 'Rôle', 'Matricule', 'Actif', 'Adresse', 'Téléphone'])
-                        writer.writerows(users)
-                elif format_export == "json":
-                    data = []
-                    for user in users:
-                        data.append({
-                            'nom': user[0],
-                            'prenom': user[1],
-                            'email': user[2],
-                            'role': user[3],
-                            'matricule': user[4],
-                            'actif': user[5],
-                            'adresse': user[6],
-                            'telephone': user[7]
-                        })
-                    with open(filename, 'w', encoding='utf-8') as jsonfile:
-                        json.dump(data, jsonfile, indent=2, ensure_ascii=False)
-                
-                output.insert("end", f"✅ Export terminé: {filename}\n")
-                output.insert("end", f"📊 {len(users)} utilisateur(s) exporté(s)\n")
-                
-                # Log de l'activité
-                self._log_activity("Export", f"Export utilisateurs via CLI", "CLI", f"Format: {format_export}, Fichier: {filename}")
-                
-            elif table == "products":
-                output.insert("end", f"📤 Export des produits au format {format_export.upper()}...\n")
-                
-                cursor.execute("SELECT nom, description, prix, stock_disponible, categorie, fournisseur FROM sge_cre.produits ORDER BY nom")
-                products = cursor.fetchall()
-                
-                if format_export == "csv":
-                    with open(filename, 'w', newline='', encoding='utf-8') as csvfile:
-                        writer = csv.writer(csvfile)
-                        writer.writerow(['Nom', 'Description', 'Prix', 'Stock', 'Catégorie', 'Fournisseur'])
-                        writer.writerows(products)
-                elif format_export == "json":
-                    data = []
-                    for product in products:
-                        data.append({
-                            'nom': product[0],
-                            'description': product[1],
-                            'prix': float(product[2]) if product[2] else 0,
-                            'stock': product[3],
-                            'categorie': product[4],
-                            'fournisseur': product[5]
-                        })
-                    with open(filename, 'w', encoding='utf-8') as jsonfile:
-                        json.dump(data, jsonfile, indent=2, ensure_ascii=False)
-                
-                output.insert("end", f"✅ Export terminé: {filename}\n")
-                output.insert("end", f"📊 {len(products)} produit(s) exporté(s)\n")
-                
-                # Log de l'activité
-                self._log_activity("Export", f"Export produits via CLI", "CLI", f"Format: {format_export}, Fichier: {filename}")
-                
-            elif table == "movements":
-                output.insert("end", f"📤 Export des mouvements au format {format_export.upper()}...\n")
-                
-                cursor.execute("SELECT type_mouvement, quantite, date_mouvement, produit_id, entrepot_id FROM sge_cre.mouvements_stock ORDER BY date_mouvement DESC")
-                movements = cursor.fetchall()
-                
-                if format_export == "csv":
-                    with open(filename, 'w', newline='', encoding='utf-8') as csvfile:
-                        writer = csv.writer(csvfile)
-                        writer.writerow(['Type', 'Quantité', 'Date', 'Produit ID', 'Entrepôt ID'])
-                        writer.writerows(movements)
-                elif format_export == "json":
-                    data = []
-                    for movement in movements:
-                        data.append({
-                            'type': movement[0],
-                            'quantite': movement[1],
-                            'date': movement[2].isoformat() if movement[2] else None,
-                            'produit_id': movement[3],
-                            'entrepot_id': movement[4]
-                        })
-                    with open(filename, 'w', encoding='utf-8') as jsonfile:
-                        json.dump(data, jsonfile, indent=2, ensure_ascii=False)
-                
-                output.insert("end", f"✅ Export terminé: {filename}\n")
-                output.insert("end", f"📊 {len(movements)} mouvement(s) exporté(s)\n")
-                
-                # Log de l'activité
-                self._log_activity("Export", f"Export mouvements via CLI", "CLI", f"Format: {format_export}, Fichier: {filename}")
-                
-            elif table == "packaging":
-                output.insert("end", f"📤 Export des emballages au format {format_export.upper()}...\n")
-                
-                cursor.execute("SELECT type_emballage, description, quantite_disponible FROM sge_cre.emballages ORDER BY type_emballage")
-                packaging = cursor.fetchall()
-                
-                if format_export == "csv":
-                    with open(filename, 'w', newline='', encoding='utf-8') as csvfile:
-                        writer = csv.writer(csvfile)
-                        writer.writerow(['Type', 'Description', 'Quantité'])
-                        writer.writerows(packaging)
-                elif format_export == "json":
-                    data = []
-                    for pkg in packaging:
-                        data.append({
-                            'type': pkg[0],
-                            'description': pkg[1],
-                            'quantite': pkg[2]
-                        })
-                    with open(filename, 'w', encoding='utf-8') as jsonfile:
-                        json.dump(data, jsonfile, indent=2, ensure_ascii=False)
-                
-                output.insert("end", f"✅ Export terminé: {filename}\n")
-                output.insert("end", f"📊 {len(packaging)} emballage(s) exporté(s)\n")
-                
-                # Log de l'activité
-                self._log_activity("Export", f"Export emballages via CLI", "CLI", f"Format: {format_export}, Fichier: {filename}")
-                
-            else:
-                output.insert("end", f"❌ Table '{table}' non reconnue.\n")
-            
-            conn.close()
-                
+            filename = f"{downloads_path}/SGE_{table}_{timestamp}.{format_export}"
+            # Créer aussi une copie dans le dossier exports local
+            local_filename = f"exports/{table}_{timestamp}.{format_export}"
+            try:
+                conn = psycopg2.connect(**PG_CONN)
+                cursor = conn.cursor()
+
+                if table == "users":
+                    output.insert("end", f"📤 Export des utilisateurs au format {format_export.upper()}...\n")
+                    
+                    cursor.execute("SELECT nom, prenom, email, role, matricule, adresse, telephone FROM sge_cre.individus ORDER BY nom")
+                    users = cursor.fetchall()
+                    
+                    if format_export == "csv":
+                        with open(filename, 'w', newline='', encoding='utf-8') as csvfile:
+                            writer = csv.writer(csvfile, delimiter=';')
+                            # En-têtes avec formatage
+                            writer.writerow(['NOM', 'PRÉNOM', 'EMAIL', 'RÔLE', 'MATRICULE', 'ADRESSE', 'TÉLÉPHONE'])
+                            # Séparateur visuel
+                            writer.writerow(['---', '---', '---', '---', '---', '---', '---'])
+                            # Données
+                            for user in users:
+                                writer.writerow(user)
+                    elif format_export == "xlsx":
+                        try:
+                            import pandas as pd
+                            from openpyxl import Workbook
+                            from openpyxl.styles import Font, PatternFill, Alignment, NamedStyle
+                            
+                            # Créer un DataFrame
+                            df = pd.DataFrame(users, columns=['NOM', 'PRÉNOM', 'EMAIL', 'RÔLE', 'MATRICULE', 'ADRESSE', 'TÉLÉPHONE'])
+                            
+                            # Exporter vers Excel avec formatage
+                            with pd.ExcelWriter(filename, engine='openpyxl') as writer:
+                                df.to_excel(writer, sheet_name='Utilisateurs', index=False)
+                                
+                                # Récupérer le workbook et la worksheet
+                                workbook = writer.book
+                                worksheet = writer.sheets['Utilisateurs']
+                                
+                                # Style pour les en-têtes
+                                header_font = Font(bold=True, color="FFFFFF", size=12)
+                                header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+                                header_alignment = Alignment(horizontal="center", vertical="center")
+                                
+                                # Appliquer le style aux en-têtes
+                                for col in range(1, len(df.columns) + 1):
+                                    cell = worksheet.cell(row=1, column=col)
+                                    cell.font = header_font
+                                    cell.fill = header_fill
+                                    cell.alignment = header_alignment
+                                
+                                # Style alterné pour les lignes de données
+                                for row in range(2, len(df) + 2):
+                                    for col in range(1, len(df.columns) + 1):
+                                        cell = worksheet.cell(row=row, column=col)
+                                        if row % 2 == 0:
+                                            cell.fill = PatternFill(start_color="F2F2F2", end_color="F2F2F2", fill_type="solid")
+                                
+                                # Ajuster la largeur des colonnes
+                                for column in worksheet.columns:
+                                    max_length = 0
+                                    column_letter = column[0].column_letter
+                                    for cell in column:
+                                        try:
+                                            if len(str(cell.value)) > max_length:
+                                                max_length = len(str(cell.value))
+                                        except:
+                                            pass
+                                    adjusted_width = min(max_length + 2, 50)
+                                    worksheet.column_dimensions[column_letter].width = adjusted_width
+                                    
+                        except ImportError:
+                            output.insert("end", "❌ Erreur: pandas et openpyxl requis pour l'export Excel\n")
+                            return
+                            
+                    elif format_export == "json":
+                        data = []
+                        for user in users:
+                            data.append({
+                                'nom': user[0],
+                                'prenom': user[1],
+                                'email': user[2],
+                                'role': user[3],
+                                'matricule': user[4],
+                                'adresse': user[5],
+                                'telephone': user[6]
+                            })
+                        with open(filename, 'w', encoding='utf-8') as jsonfile:
+                            json.dump(data, jsonfile, indent=2, ensure_ascii=False)
+                    
+                    # Créer une copie locale
+                    try:
+                        import shutil
+                        shutil.copy2(filename, local_filename)
+                        output.insert("end", f"✅ Export terminé: {filename}\n")
+                        output.insert("end", f"📁 Copie locale: {local_filename}\n")
+                        output.insert("end", f"📊 {len(users)} utilisateur(s) exporté(s)\n")
+                    except Exception as e:
+                        output.insert("end", f"✅ Export terminé: {filename}\n")
+                        output.insert("end", f"⚠️ Impossible de créer la copie locale: {e}\n")
+                        output.insert("end", f"📊 {len(users)} utilisateur(s) exporté(s)\n")
+                    
+                    # Ouvrir le fichier automatiquement
+                    try:
+                        import os
+                        import subprocess
+                        import platform
+                        
+                        # Obtenir le chemin absolu du fichier
+                        abs_path = os.path.abspath(filename)
+                        output.insert("end", f"📁 Fichier sauvegardé: {abs_path}\n")
+                        
+                        # Ouvrir le fichier selon le système d'exploitation
+                        system = platform.system()
+                        if system == "Windows":
+                            os.startfile(abs_path)
+                        elif system == "Darwin":  # macOS
+                            subprocess.run(["open", abs_path])
+                        else:  # Linux
+                            subprocess.run(["xdg-open", abs_path])
+                        
+                        output.insert("end", f"🚀 Fichier ouvert automatiquement!\n")
+                        
+                    except Exception as e:
+                        output.insert("end", f"⚠️ Impossible d'ouvrir le fichier automatiquement: {e}\n")
+                    
+                    # Log de l'activité
+                    self._log_activity("Export", f"Export utilisateurs via CLI", "CLI", f"Format: {format_export}, Fichier: {filename}")
+                    
+                elif table == "products":
+                    output.insert("end", f"📤 Export des produits au format {format_export.upper()}...\n")
+                    
+                    cursor.execute("SELECT nom, description, marque, modele, fournisseur, stock FROM sge_cre.produits ORDER BY nom")
+                    products = cursor.fetchall()
+                    
+                    if format_export == "csv":
+                        with open(filename, 'w', newline='', encoding='utf-8') as csvfile:
+                            writer = csv.writer(csvfile, delimiter=';')
+                            # En-têtes avec formatage
+                            writer.writerow(['NOM', 'DESCRIPTION', 'MARQUE', 'MODÈLE', 'FOURNISSEUR', 'STOCK'])
+                            # Séparateur visuel
+                            writer.writerow(['---', '---', '---', '---', '---', '---'])
+                            # Données
+                            for product in products:
+                                writer.writerow(product)
+                    elif format_export == "xlsx":
+                        try:
+                            import pandas as pd
+                            from openpyxl import Workbook
+                            from openpyxl.styles import Font, PatternFill, Alignment, NamedStyle
+                            
+                            # Créer un DataFrame
+                            df = pd.DataFrame(products, columns=['NOM', 'DESCRIPTION', 'MARQUE', 'MODÈLE', 'FOURNISSEUR', 'STOCK'])
+                            
+                            # Exporter vers Excel avec formatage
+                            with pd.ExcelWriter(filename, engine='openpyxl') as writer:
+                                df.to_excel(writer, sheet_name='Produits', index=False)
+                                
+                                # Récupérer le workbook et la worksheet
+                                workbook = writer.book
+                                worksheet = writer.sheets['Produits']
+                                
+                                # Style pour les en-têtes
+                                header_font = Font(bold=True, color="FFFFFF", size=12)
+                                header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+                                header_alignment = Alignment(horizontal="center", vertical="center")
+                                
+                                # Appliquer le style aux en-têtes
+                                for col in range(1, len(df.columns) + 1):
+                                    cell = worksheet.cell(row=1, column=col)
+                                    cell.font = header_font
+                                    cell.fill = header_fill
+                                    cell.alignment = header_alignment
+                                
+                                # Style alterné pour les lignes de données
+                                for row in range(2, len(df) + 2):
+                                    for col in range(1, len(df.columns) + 1):
+                                        cell = worksheet.cell(row=row, column=col)
+                                        if row % 2 == 0:
+                                            cell.fill = PatternFill(start_color="F2F2F2", end_color="F2F2F2", fill_type="solid")
+                                
+                                # Ajuster la largeur des colonnes
+                                for column in worksheet.columns:
+                                    max_length = 0
+                                    column_letter = column[0].column_letter
+                                    for cell in column:
+                                        try:
+                                            if len(str(cell.value)) > max_length:
+                                                max_length = len(str(cell.value))
+                                        except:
+                                            pass
+                                    adjusted_width = min(max_length + 2, 50)
+                                    worksheet.column_dimensions[column_letter].width = adjusted_width
+                                    
+                        except ImportError:
+                            output.insert("end", "❌ Erreur: pandas et openpyxl requis pour l'export Excel\n")
+                            return
+                            
+                    elif format_export == "json":
+                        data = []
+                        for product in products:
+                            data.append({
+                                'nom': product[0],
+                                'description': product[1],
+                                'marque': product[2],
+                                'modele': product[3],
+                                'fournisseur': product[4],
+                                'stock': product[5]
+                            })
+                        with open(filename, 'w', encoding='utf-8') as jsonfile:
+                            json.dump(data, jsonfile, indent=2, ensure_ascii=False)
+                    
+                    # Créer une copie locale
+                    try:
+                        import shutil
+                        shutil.copy2(filename, local_filename)
+                        output.insert("end", f"✅ Export terminé: {filename}\n")
+                        output.insert("end", f"📁 Copie locale: {local_filename}\n")
+                        output.insert("end", f"📊 {len(products)} produit(s) exporté(s)\n")
+                    except Exception as e:
+                        output.insert("end", f"✅ Export terminé: {filename}\n")
+                        output.insert("end", f"⚠️ Impossible de créer la copie locale: {e}\n")
+                        output.insert("end", f"📊 {len(products)} produit(s) exporté(s)\n")
+                    
+                    # Ouvrir le fichier automatiquement
+                    try:
+                        import os
+                        import subprocess
+                        import platform
+                        
+                        # Obtenir le chemin absolu du fichier
+                        abs_path = os.path.abspath(filename)
+                        output.insert("end", f"📁 Fichier sauvegardé: {abs_path}\n")
+                        
+                        # Ouvrir le fichier selon le système d'exploitation
+                        system = platform.system()
+                        if system == "Windows":
+                            os.startfile(abs_path)
+                        elif system == "Darwin":  # macOS
+                            subprocess.run(["open", abs_path])
+                        else:  # Linux
+                            subprocess.run(["xdg-open", abs_path])
+                        
+                        output.insert("end", f"🚀 Fichier ouvert automatiquement!\n")
+                        
+                    except Exception as e:
+                        output.insert("end", f"⚠️ Impossible d'ouvrir le fichier automatiquement: {e}\n")
+                    
+                    # Log de l'activité
+                    self._log_activity("Export", f"Export produits via CLI", "CLI", f"Format: {format_export}, Fichier: {filename}")
+                    
+                elif table == "movements":
+                    output.insert("end", f"📤 Export des mouvements au format {format_export.upper()}...\n")
+                    
+                    cursor.execute("SELECT type, quantite, date_mouvement, produit_nom, reference FROM sge_cre.mouvements ORDER BY date_mouvement DESC")
+                    movements = cursor.fetchall()
+                    
+                    if format_export == "csv":
+                        with open(filename, 'w', newline='', encoding='utf-8') as csvfile:
+                            writer = csv.writer(csvfile, delimiter=';')
+                            # En-têtes avec formatage
+                            writer.writerow(['TYPE', 'QUANTITÉ', 'DATE', 'PRODUIT', 'RÉFÉRENCE'])
+                            # Séparateur visuel
+                            writer.writerow(['---', '---', '---', '---', '---'])
+                            # Données
+                            for movement in movements:
+                                writer.writerow(movement)
+                    elif format_export == "xlsx":
+                        try:
+                            import pandas as pd
+                            from openpyxl import Workbook
+                            from openpyxl.styles import Font, PatternFill, Alignment, NamedStyle
+                            
+                            # Créer un DataFrame
+                            df = pd.DataFrame(movements, columns=['TYPE', 'QUANTITÉ', 'DATE', 'PRODUIT', 'RÉFÉRENCE'])
+                            
+                            # Exporter vers Excel avec formatage
+                            with pd.ExcelWriter(filename, engine='openpyxl') as writer:
+                                df.to_excel(writer, sheet_name='Mouvements', index=False)
+                                
+                                # Récupérer le workbook et la worksheet
+                                workbook = writer.book
+                                worksheet = writer.sheets['Mouvements']
+                                
+                                # Style pour les en-têtes
+                                header_font = Font(bold=True, color="FFFFFF", size=12)
+                                header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+                                header_alignment = Alignment(horizontal="center", vertical="center")
+                                
+                                # Appliquer le style aux en-têtes
+                                for col in range(1, len(df.columns) + 1):
+                                    cell = worksheet.cell(row=1, column=col)
+                                    cell.font = header_font
+                                    cell.fill = header_fill
+                                    cell.alignment = header_alignment
+                                
+                                # Style alterné pour les lignes de données
+                                for row in range(2, len(df) + 2):
+                                    for col in range(1, len(df.columns) + 1):
+                                        cell = worksheet.cell(row=row, column=col)
+                                        if row % 2 == 0:
+                                            cell.fill = PatternFill(start_color="F2F2F2", end_color="F2F2F2", fill_type="solid")
+                                
+                                # Ajuster la largeur des colonnes
+                                for column in worksheet.columns:
+                                    max_length = 0
+                                    column_letter = column[0].column_letter
+                                    for cell in column:
+                                        try:
+                                            if len(str(cell.value)) > max_length:
+                                                max_length = len(str(cell.value))
+                                        except:
+                                            pass
+                                    adjusted_width = min(max_length + 2, 50)
+                                    worksheet.column_dimensions[column_letter].width = adjusted_width
+                                    
+                        except ImportError:
+                            output.insert("end", "❌ Erreur: pandas et openpyxl requis pour l'export Excel\n")
+                            return
+                            
+                    elif format_export == "json":
+                        data = []
+                        for movement in movements:
+                            data.append({
+                                'type': movement[0],
+                                'quantite': movement[1],
+                                'date': movement[2].isoformat() if movement[2] else None,
+                                'produit': movement[3],
+                                'reference': movement[4]
+                            })
+                        with open(filename, 'w', encoding='utf-8') as jsonfile:
+                            json.dump(data, jsonfile, indent=2, ensure_ascii=False)
+                        
+                        
+                        # Créer une copie locale
+                        try:
+                            import shutil
+                            shutil.copy2(filename, local_filename)
+                            output.insert("end", f"✅ Export terminé: {filename}\n")
+                            output.insert("end", f"📁 Copie locale: {local_filename}\n")
+                            output.insert("end", f"📊 {len(users)} utilisateur(s) exporté(s)\n")
+                        except Exception as e:
+                            output.insert("end", f"✅ Export terminé: {filename}\n")
+                            output.insert("end", f"⚠️ Impossible de créer la copie locale: {e}\n")
+                            output.insert("end", f"📊 {len(users)} utilisateur(s) exporté(s)\n")
+                        
+                        # Ouvrir le fichier automatiquement
+                        try:
+                            import os
+                            import subprocess
+                            import platform
+                            
+                            # Obtenir le chemin absolu du fichier
+                            abs_path = os.path.abspath(filename)
+                            output.insert("end", f"📁 Fichier sauvegardé: {abs_path}\n")
+                            
+                            # Ouvrir le fichier selon le système d'exploitation
+                            system = platform.system()
+                            if system == "Windows":
+                                os.startfile(abs_path)
+                            elif system == "Darwin":  # macOS
+                                subprocess.run(["open", abs_path])
+                            else:  # Linux
+                                subprocess.run(["xdg-open", abs_path])
+                            
+                            output.insert("end", f"🚀 Fichier ouvert automatiquement!\n")
+                            
+                        except Exception as e:
+                            output.insert("end", f"⚠️ Impossible d'ouvrir le fichier automatiquement: {e}\n")
+
+                        
+                        # Ouvrir le fichier automatiquement
+                        try:
+                            import os
+                            import subprocess
+                            import platform
+                            
+                            # Obtenir le chemin absolu du fichier
+                            abs_path = os.path.abspath(filename)
+                            output.insert("end", f"📁 Fichier sauvegardé: {abs_path}\n")
+                            
+                            # Ouvrir le fichier selon le système d'exploitation
+                            system = platform.system()
+                            if system == "Windows":
+                                os.startfile(abs_path)
+                            elif system == "Darwin":  # macOS
+                                subprocess.run(["open", abs_path])
+                            else:  # Linux
+                                subprocess.run(["xdg-open", abs_path])
+                            
+                            output.insert("end", f"🚀 Fichier ouvert automatiquement!\n")
+                            
+                        except Exception as e:
+                            output.insert("end", f"⚠️ Impossible d'ouvrir le fichier automatiquement: {e}\n")
+                        
+                        # Log de l'activité
+                        self._log_activity("Export", f"Export mouvements via CLI", "CLI", f"Format: {format_export}, Fichier: {filename}")
+                        
+                    elif table == "packaging":
+                        output.insert("end", f"📤 Export des emballages au format {format_export.upper()}...\n")
+                        
+                        cursor.execute("SELECT type_emballage, etat_emballage FROM sge_cre.materiel_emballage ORDER BY type_emballage")
+                        packaging = cursor.fetchall()
+                        
+                        if format_export == "csv":
+                            with open(filename, 'w', newline='', encoding='utf-8') as csvfile:
+                                writer = csv.writer(csvfile, delimiter=';')
+                                # En-têtes avec formatage
+                                writer.writerow(['TYPE', 'ÉTAT'])
+                                # Séparateur visuel
+                                writer.writerow(['---', '---'])
+                                # Données
+                                for pack in packaging:
+                                    writer.writerow(pack)
+                        elif format_export == "xlsx":
+                            try:
+                                import pandas as pd
+                                from openpyxl import Workbook
+                                from openpyxl.styles import Font, PatternFill, Alignment, NamedStyle
+                                
+                                # Créer un DataFrame
+                                df = pd.DataFrame(packaging, columns=['TYPE', 'ÉTAT'])
+                                
+                                # Exporter vers Excel avec formatage
+                                with pd.ExcelWriter(filename, engine='openpyxl') as writer:
+                                    df.to_excel(writer, sheet_name='Emballages', index=False)
+                                    
+                                    # Récupérer le workbook et la worksheet
+                                    workbook = writer.book
+                                    worksheet = writer.sheets['Emballages']
+                                    
+                                    # Style pour les en-têtes
+                                    header_font = Font(bold=True, color="FFFFFF", size=12)
+                                    header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+                                    header_alignment = Alignment(horizontal="center", vertical="center")
+                                    
+                                    # Appliquer le style aux en-têtes
+                                    for col in range(1, len(df.columns) + 1):
+                                        cell = worksheet.cell(row=1, column=col)
+                                        cell.font = header_font
+                                        cell.fill = header_fill
+                                        cell.alignment = header_alignment
+                                    
+                                    # Style alterné pour les lignes de données
+                                    for row in range(2, len(df) + 2):
+                                        for col in range(1, len(df.columns) + 1):
+                                            cell = worksheet.cell(row=row, column=col)
+                                            if row % 2 == 0:
+                                                cell.fill = PatternFill(start_color="F2F2F2", end_color="F2F2F2", fill_type="solid")
+                                    
+                                    # Ajuster la largeur des colonnes
+                                    for column in worksheet.columns:
+                                        max_length = 0
+                                        column_letter = column[0].column_letter
+                                        for cell in column:
+                                            try:
+                                                if len(str(cell.value)) > max_length:
+                                                    max_length = len(str(cell.value))
+                                            except:
+                                                pass
+                                    adjusted_width = min(max_length + 2, 50)
+                                    worksheet.column_dimensions[column_letter].width = adjusted_width
+                                    
+                            except ImportError:
+                                output.insert("end", "❌ Erreur: pandas et openpyxl requis pour l'export Excel\n")
+                                return
+                                
+                        elif format_export == "json":
+                            data = []
+                            for pkg in packaging:
+                                data.append({
+                                    'type': pkg[0],
+                                    'etat': pkg[1]
+                                })
+                            with open(filename, 'w', encoding='utf-8') as jsonfile:
+                                json.dump(data, jsonfile, indent=2, ensure_ascii=False)
+                            
+                            
+                            # Créer une copie locale
+                            try:
+                                import shutil
+                                shutil.copy2(filename, local_filename)
+                                output.insert("end", f"✅ Export terminé: {filename}\n")
+                                output.insert("end", f"📁 Copie locale: {local_filename}\n")
+                                output.insert("end", f"📊 {len(users)} utilisateur(s) exporté(s)\n")
+                            except Exception as e:
+                                output.insert("end", f"✅ Export terminé: {filename}\n")
+                                output.insert("end", f"⚠️ Impossible de créer la copie locale: {e}\n")
+                                output.insert("end", f"📊 {len(users)} utilisateur(s) exporté(s)\n")
+                            
+                            # Ouvrir le fichier automatiquement
+                            try:
+                                import os
+                                import subprocess
+                                import platform
+                                
+                                # Obtenir le chemin absolu du fichier
+                                abs_path = os.path.abspath(filename)
+                                output.insert("end", f"📁 Fichier sauvegardé: {abs_path}\n")
+                                
+                                # Ouvrir le fichier selon le système d'exploitation
+                                system = platform.system()
+                                if system == "Windows":
+                                    os.startfile(abs_path)
+                                elif system == "Darwin":  # macOS
+                                    subprocess.run(["open", abs_path])
+                                else:  # Linux
+                                    subprocess.run(["xdg-open", abs_path])
+                                
+                                output.insert("end", f"🚀 Fichier ouvert automatiquement!\n")
+                                
+                            except Exception as e:
+                                output.insert("end", f"⚠️ Impossible d'ouvrir le fichier automatiquement: {e}\n")
+
+                            
+                            # Ouvrir le fichier automatiquement
+                            try:
+                                import os
+                                import subprocess
+                                import platform
+                                
+                                # Obtenir le chemin absolu du fichier
+                                abs_path = os.path.abspath(filename)
+                                output.insert("end", f"📁 Fichier sauvegardé: {abs_path}\n")
+                                
+                                # Ouvrir le fichier selon le système d'exploitation
+                                system = platform.system()
+                                if system == "Windows":
+                                    os.startfile(abs_path)
+                                elif system == "Darwin":  # macOS
+                                    subprocess.run(["open", abs_path])
+                                else:  # Linux
+                                    subprocess.run(["xdg-open", abs_path])
+                                
+                                output.insert("end", f"🚀 Fichier ouvert automatiquement!\n")
+                                
+                            except Exception as e:
+                                output.insert("end", f"⚠️ Impossible d'ouvrir le fichier automatiquement: {e}\n")
+                            
+                            # Log de l'activité
+                            self._log_activity("Export", f"Export emballages via CLI", "CLI", f"Format: {format_export}, Fichier: {filename}")
+                            
+                        else:
+                            output.insert("end", f"❌ Table '{table}' non reconnue.\n")
+                        
+                        conn.close()
+                            
+
+
+            except Exception as e:
+                output.insert("end", f"❌ Erreur: {str(e)}\n")
+
+            except Exception as e:
+                output.insert("end", f"❌ Erreur: {str(e)}\n")
+
+        except Exception as e:
+            output.insert("end", f"❌ Erreur: {str(e)}\n")
+
         except Exception as e:
             output.insert("end", f"❌ Erreur: {str(e)}\n")
 
@@ -2504,8 +3099,8 @@ class AdminFrame(ctk.CTkFrame):
             conn = psycopg2.connect(**PG_CONN)
             cursor = conn.cursor()
             
-            # Statistiques des utilisateurs
-            cursor.execute("SELECT COUNT(*) FROM sge_cre.individus WHERE actif = true")
+            # Statistiques des utilisateurs (corrigé : on compte tous les utilisateurs)
+            cursor.execute("SELECT COUNT(*) FROM sge_cre.individus")
             users_actifs = cursor.fetchone()[0]
             
             # Statistiques des produits
@@ -2520,10 +3115,11 @@ class AdminFrame(ctk.CTkFrame):
             
             output.insert("end", "\n🔧 STATUT DU SYSTÈME:\n")
             output.insert("end", "═" * 50 + "\n")
-            output.insert("end", f"👥 Utilisateurs actifs: {users_actifs}\n")
+            output.insert("end", f"👥 Utilisateurs (total): {users_actifs}\n")
             output.insert("end", f"📦 Produits en base: {total_products}\n")
             output.insert("end", f"📊 Mouvements enregistrés: {total_movements}\n")
             output.insert("end", f"🟢 Système: Opérationnel\n")
+            import datetime
             output.insert("end", f"📅 Dernière vérification: {datetime.datetime.now().strftime('%d/%m/%Y %H:%M:%S')}\n")
             
         except Exception as e:
@@ -2568,16 +3164,16 @@ class AdminFrame(ctk.CTkFrame):
             ("Téléphone", "phone", "")
         ]
         role_values = [
-            "Responsable des stocks",
-            "Magasinier",
-            "Emballeur",
-            "Responsable de la logistique",
-            "Agent de logistique",
-            "Livreur",
-            "Responsable informatique",
-            "Technicien informatique",
-            "Responsable de la sécurité physique",
-            "Garde de sécurité"
+            "Le responsable des stocks",
+            "Le magasinier",
+            "Les emballeurs",
+            "Le responsable de la logistique",
+            "Les agents de logistique",
+            "Les livreurs",
+            "Le responsable informatique",
+            "Les techniciens informatiques",
+            "Le responsable de la sécurité physique",
+            "Les gardes de sécurité"
         ]
         for label, icon, val in fields:
             row = ctk.CTkFrame(scroll, fg_color="transparent")
@@ -2607,9 +3203,9 @@ class AdminFrame(ctk.CTkFrame):
             role = entries["Rôle *"].get()
             if role:
                 auto_matricule = MatriculeManager.generate_matricule(role)
-                if not getattr(entries["Matricule *"], '_user_modified', False):
-                    entries["Matricule *"].delete(0, 'end')
-                    entries["Matricule *"].insert(0, auto_matricule)
+            if not getattr(entries["Matricule *"], '_user_modified', False):
+                entries["Matricule *"].delete(0, 'end')
+                entries["Matricule *"].insert(0, auto_matricule)
                 prefix = MatriculeManager.get_role_prefix(role)
                 if hasattr(entries["Matricule *"], '_prefix_label'):
                     entries["Matricule *"]._prefix_label.configure(text=f"Préfixe: {prefix}")
@@ -2631,186 +3227,180 @@ class AdminFrame(ctk.CTkFrame):
             if label == "Rôle *":
                 entries[label].bind("<<ComboboxSelected>>", lambda e, l=label: clear_error(e, l))
         def save():
-            nom = entries["Nom *"].get()
-            prenom = entries["Prénom *"].get()
-            email = entries["Email *"].get()
-            matricule = entries["Matricule *"].get()
-            role = entries["Rôle *"].get()
-            mdp = entries["Mot de passe *"].get()
-            conf = entries["Confirmation *"].get()
-            adresse = entries["Adresse *"].get()
-            telephone = entries["Téléphone"].get()
-            valid = True
-            for err in errors.values(): err.configure(text="")
-            for field, entry in entries.items(): entry.configure(border_color="#D1D5DB")
-            # Validation des champs obligatoires
-            if not nom:
-                errors["Nom *"].configure(text="Champ obligatoire")
-                entries["Nom *"].configure(border_color="#ef4444")
-                valid = False
-            if not prenom:
-                errors["Prénom *"].configure(text="Champ obligatoire")
-                entries["Prénom *"].configure(border_color="#ef4444")
-                valid = False
-            if not email or "@" not in email:
-                errors["Email *"].configure(text="Email invalide")
-                entries["Email *"].configure(border_color="#ef4444")
-                valid = False
-            if not matricule:
-                errors["Matricule *"].configure(text="Champ obligatoire")
-                entries["Matricule *"].configure(border_color="#ef4444")
-                valid = False
-            if not mdp or not conf:
-                errors["Mot de passe *"].configure(text="Champ obligatoire")
-                errors["Confirmation *"].configure(text="Champ obligatoire")
-                entries["Mot de passe *"].configure(border_color="#ef4444")
-                entries["Confirmation *"].configure(border_color="#ef4444")
-                valid = False
-            if mdp != conf:
-                errors["Confirmation *"].configure(text="Les mots de passe ne correspondent pas")
-                entries["Confirmation *"].configure(border_color="#ef4444")
-                valid = False
-            if not role:
-                errors["Rôle *"].configure(text="Champ obligatoire")
-                entries["Rôle *"].configure(border_color="#ef4444")
-                valid = False
-            if not adresse:
-                errors["Adresse *"].configure(text="Champ obligatoire")
-                entries["Adresse *"].configure(border_color="#ef4444")
-                valid = False
-            # Validation et unicité du matricule
-            if matricule:
-                is_valid, validation_msg = MatriculeManager.validate_matricule(matricule)
-                if not is_valid:
-                    errors["Matricule *"].configure(text=validation_msg)
+            # --- ÉDITION UTILISATEUR ---
+            if 'uid' in locals() or 'uid' in globals():
+                nom = entries["Nom *"].get()
+                prenom = entries["Prénom *"].get()
+                email = entries["Email *"].get()
+                role = entries["Rôle *"].get()
+                matricule = entries["Matricule *"].get()
+                valid = True
+                for err in errors.values(): err.configure(text="")
+                for field, entry in entries.items(): entry.configure(border_color="#D1D5DB")
+                # Validation des champs obligatoires
+                if not nom:
+                    errors["Nom *"].configure(text="Champ obligatoire")
+                    entries["Nom *"].configure(border_color="#ef4444")
+                    valid = False
+                if not prenom:
+                    errors["Prénom *"].configure(text="Champ obligatoire")
+                    entries["Prénom *"].configure(border_color="#ef4444")
+                    valid = False
+                if not email or "@" not in email:
+                    errors["Email *"].configure(text="Email invalide")
+                    entries["Email *"].configure(border_color="#ef4444")
+                    valid = False
+                if not matricule:
+                    errors["Matricule *"].configure(text="Champ obligatoire")
                     entries["Matricule *"].configure(border_color="#ef4444")
                     valid = False
-                else:
-                    is_available, availability_msg = MatriculeManager.is_matricule_available(matricule)
-                    if not is_available:
-                        errors["Matricule *"].configure(text=availability_msg)
+                if not role:
+                    errors["Rôle *"].configure(text="Champ obligatoire")
+                    entries["Rôle *"].configure(border_color="#ef4444")
+                    valid = False
+                if not valid:
+                    return
+                try:
+                    from database import update_user
+                    update_user(uid, nom, prenom, email, role, "", "", matricule)
+                    modal.destroy()
+                    self._refresh_users(table, search_term)
+                except Exception as e:
+                    errors["Email *"].configure(text=f"Erreur : {e}")
+                    entries["Email *"].configure(border_color="#ef4444")
+            # --- CRÉATION UTILISATEUR ---
+            else:
+                nom = entries["Nom *"].get()
+                prenom = entries["Prénom *"].get()
+                email = entries["Email *"].get()
+                matricule = entries["Matricule *"].get()
+                role = entries["Rôle *"].get()
+                mdp = entries["Mot de passe *"].get()
+                conf = entries["Confirmation *"].get()
+                adresse = entries["Adresse *"].get()
+                telephone = entries["Téléphone"].get()
+                valid = True
+                for err in errors.values(): err.configure(text="")
+                for field, entry in entries.items(): entry.configure(border_color="#D1D5DB")
+                # Validation des champs obligatoires
+                if not nom:
+                    errors["Nom *"].configure(text="Champ obligatoire")
+                    entries["Nom *"].configure(border_color="#ef4444")
+                    valid = False
+                if not prenom:
+                    errors["Prénom *"].configure(text="Champ obligatoire")
+                    entries["Prénom *"].configure(border_color="#ef4444")
+                    valid = False
+                if not email or "@" not in email:
+                    errors["Email *"].configure(text="Email invalide")
+                    entries["Email *"].configure(border_color="#ef4444")
+                    valid = False
+                if not matricule:
+                    errors["Matricule *"].configure(text="Champ obligatoire")
+                    entries["Matricule *"].configure(border_color="#ef4444")
+                    valid = False
+                if not mdp or not conf:
+                    errors["Mot de passe *"].configure(text="Champ obligatoire")
+                    errors["Confirmation *"].configure(text="Champ obligatoire")
+                    entries["Mot de passe *"].configure(border_color="#ef4444")
+                    entries["Confirmation *"].configure(border_color="#ef4444")
+                    valid = False
+                if mdp != conf:
+                    errors["Confirmation *"].configure(text="Les mots de passe ne correspondent pas")
+                    entries["Confirmation *"].configure(border_color="#ef4444")
+                    valid = False
+                if not role:
+                    errors["Rôle *"].configure(text="Champ obligatoire")
+                    entries["Rôle *"].configure(border_color="#ef4444")
+                    valid = False
+                if not adresse:
+                    errors["Adresse *"].configure(text="Champ obligatoire")
+                    entries["Adresse *"].configure(border_color="#ef4444")
+                    valid = False
+                # Validation et unicité du matricule
+                if matricule:
+                    is_valid, validation_msg = MatriculeManager.validate_matricule(matricule)
+                    if not is_valid:
+                        errors["Matricule *"].configure(text=validation_msg)
                         entries["Matricule *"].configure(border_color="#ef4444")
                         valid = False
-                    expected_role = MatriculeManager.get_role_from_matricule(matricule)
-                    if expected_role and expected_role != role:
-                        errors["Matricule *"].configure(text=f"Ce matricule correspond au rôle '{expected_role}'")
-                        entries["Matricule *"].configure(border_color="#ef4444")
-                        valid = False
-            if not valid:
-                return
-            # Ajout utilisateur en base PostgreSQL
-            try:
-                import psycopg2, datetime
-                conn = psycopg2.connect(**PG_CONN)
-                cursor = conn.cursor()
-                cursor.execute("""
-                    INSERT INTO sge_cre.individus (nom, prenom, email, password, role, matricule, adresse, telephone)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                """, (
-                    nom,
-                    prenom,
-                    email,
-                    mdp,  # mot de passe en clair (à hasher en production)
-                    role,
-                    matricule,
-                    adresse,
-                    telephone
-                ))
-                conn.commit()
-                conn.close()
+                    else:
+                        is_available, availability_msg = MatriculeManager.is_matricule_available(matricule)
+                        if not is_available:
+                            errors["Matricule *"].configure(text=availability_msg)
+                            entries["Matricule *"].configure(border_color="#ef4444")
+                            valid = False
+                        expected_role = MatriculeManager.get_role_from_matricule(matricule)
+                        if expected_role and expected_role != role:
+                            errors["Matricule *"].configure(text=f"Ce matricule correspond au rôle '{expected_role}'")
+                            entries["Matricule *"].configure(border_color="#ef4444")
+                            valid = False
+                if not valid:
+                    return
+                try:
+                    import psycopg2, datetime
+                    conn = psycopg2.connect(**PG_CONN)
+                    cursor = conn.cursor()
+                    cursor.execute("""
+                        INSERT INTO sge_cre.individus (nom, prenom, email, password, role, matricule, adresse, telephone)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    """, (
+                        nom,
+                        prenom,
+                        email,
+                        mdp,  # mot de passe en clair (à hasher en production)
+                        role,
+                        matricule,
+                        adresse,
+                        telephone
+                    ))
+                    conn.commit()
+                    conn.close()
+                    # Popup de succès
+                    success_modal = ctk.CTkToplevel(modal)
+                    success_modal.title("🎉 Succès")
+                    success_modal.geometry("480x420")
+                    success_modal.grab_set()
+                    success_modal.resizable(False, False)
+                    success_modal.configure(fg_color="#ffffff")
+                    # Centrer la modale
+                    success_modal.update_idletasks()
+                    x = (success_modal.winfo_screenwidth() // 2) - (480 // 2)
+                    y = (success_modal.winfo_screenheight() // 2) - (420 // 2)
+                    success_modal.geometry(f"480x420+{x}+{y}")
+                    # Conteneur principal
+                    main_container = ctk.CTkFrame(success_modal, fg_color="#ffffff", corner_radius=24, border_width=3, border_color="#e5e7eb")
+                    main_container.pack(fill="both", expand=True, padx=25, pady=25)
+                    # Animation de succès
+                    success_circle = ctk.CTkFrame(main_container, fg_color="#dcfce7", corner_radius=60, width=120, height=120, border_width=3, border_color="#bbf7d0")
+                    success_circle.pack(pady=(35, 25))
+                    ctk.CTkLabel(success_circle, text="🎉", font=ctk.CTkFont(size=52), text_color="#16a34a").pack(expand=True)
+                    ctk.CTkLabel(main_container, text="🎊 Utilisateur Créé avec Succès !", font=ctk.CTkFont(size=26, weight="bold"), text_color="#1f2937").pack(pady=(0, 18))
+                    ctk.CTkLabel(main_container, text=f"✨ L'utilisateur {prenom} {nom} a été ajouté avec succès au système de gestion d'entrepôts.", font=ctk.CTkFont(size=15), text_color="#6b7280", wraplength=400).pack(pady=(0, 28))
+                    info_frame = ctk.CTkFrame(main_container, fg_color="#f8fafc", corner_radius=16, border_width=2, border_color="#e2e8f0")
+                    info_frame.pack(fill="x", padx=25, pady=(0, 28))
+                    matricule_container = ctk.CTkFrame(info_frame, fg_color="transparent")
+                    matricule_container.pack(fill="x", padx=18, pady=(15, 8))
+                    ctk.CTkLabel(matricule_container, text="🆔 Matricule", font=ctk.CTkFont(size=15, weight="bold"), text_color="#374151").pack(side="left")
+                    ctk.CTkLabel(matricule_container, text=matricule, font=ctk.CTkFont(size=20, weight="bold"), text_color="#059669").pack(side="right")
+                    role_container = ctk.CTkFrame(info_frame, fg_color="transparent")
+                    role_container.pack(fill="x", padx=18, pady=(8, 15))
+                    ctk.CTkLabel(role_container, text="👤 Rôle", font=ctk.CTkFont(size=15, weight="bold"), text_color="#374151").pack(side="left")
+                    ctk.CTkLabel(role_container, text=role, font=ctk.CTkFont(size=17), text_color="#6b7280").pack(side="right")
+                    ctk.CTkButton(main_container, text="🎯 Parfait ! Continuer", fg_color="#10b981", hover_color="#059669", text_color="white", corner_radius=16, height=52, font=ctk.CTkFont(size=17, weight="bold"), border_width=2, border_color="#34d399", command=lambda: [success_modal.destroy(), modal.destroy()]).pack(pady=(0, 25), padx=25, fill="x")
+                    success_modal.after(5000, lambda: [success_modal.destroy(), modal.destroy()])
+                except Exception as e:
+                    errors["Email *"].configure(text=f"Erreur : {e}")
+                    entries["Email *"].configure(border_color="#ef4444")
                 
-                # Popup de succès ultra-moderne et élégant
-                success_modal = ctk.CTkToplevel(modal)
-                success_modal.title("🎉 Succès")
-                success_modal.geometry("480x420")
-                success_modal.grab_set()
-                success_modal.resizable(False, False)
-                success_modal.configure(fg_color="#ffffff")
-                
-                # Centrer la modale
-                success_modal.update_idletasks()
-                x = (success_modal.winfo_screenwidth() // 2) - (480 // 2)
-                y = (success_modal.winfo_screenheight() // 2) - (420 // 2)
-                success_modal.geometry(f"480x420+{x}+{y}")
-                
-                # Conteneur principal avec ombre et bordure
-                main_container = ctk.CTkFrame(success_modal, fg_color="#ffffff", corner_radius=24, border_width=3, border_color="#e5e7eb")
-                main_container.pack(fill="both", expand=True, padx=25, pady=25)
-                
-                # Animation de succès avec cercle et effet
-                success_circle = ctk.CTkFrame(main_container, fg_color="#dcfce7", corner_radius=60, width=120, height=120, border_width=3, border_color="#bbf7d0")
-                success_circle.pack(pady=(35, 25))
-                
-                # Icône de succès dans le cercle avec effet
-                ctk.CTkLabel(
-                    success_circle, text="🎉", font=ctk.CTkFont(size=52), text_color="#16a34a"
-                ).pack(expand=True)
-                
-                # Titre principal avec emoji
-                ctk.CTkLabel(
-                    main_container, text="🎊 Utilisateur Créé avec Succès !",
-                    font=ctk.CTkFont(size=26, weight="bold"), text_color="#1f2937"
-                ).pack(pady=(0, 18))
-                
-                # Message de confirmation amélioré
-                ctk.CTkLabel(
-                    main_container, text=f"✨ L'utilisateur {prenom} {nom} a été ajouté avec succès au système de gestion d'entrepôts.",
-                    font=ctk.CTkFont(size=15), text_color="#6b7280", wraplength=400
-                ).pack(pady=(0, 28))
-                
-                # Informations détaillées dans un cadre élégant
-                info_frame = ctk.CTkFrame(main_container, fg_color="#f8fafc", corner_radius=16, border_width=2, border_color="#e2e8f0")
-                info_frame.pack(fill="x", padx=25, pady=(0, 28))
-                
-                # Matricule avec style amélioré
-                matricule_container = ctk.CTkFrame(info_frame, fg_color="transparent")
-                matricule_container.pack(fill="x", padx=18, pady=(15, 8))
-                ctk.CTkLabel(
-                    matricule_container, text="🆔 Matricule", font=ctk.CTkFont(size=15, weight="bold"), text_color="#374151"
-                ).pack(side="left")
-                ctk.CTkLabel(
-                    matricule_container, text=matricule, font=ctk.CTkFont(size=20, weight="bold"), text_color="#059669"
-                ).pack(side="right")
-                
-                # Rôle avec style amélioré
-                role_container = ctk.CTkFrame(info_frame, fg_color="transparent")
-                role_container.pack(fill="x", padx=18, pady=(8, 15))
-                ctk.CTkLabel(
-                    role_container, text="👤 Rôle", font=ctk.CTkFont(size=15, weight="bold"), text_color="#374151"
-                ).pack(side="left")
-                ctk.CTkLabel(
-                    role_container, text=role, font=ctk.CTkFont(size=17), text_color="#6b7280"
-                ).pack(side="right")
-                
-                # Bouton OK ultra-moderne avec effet
-                ctk.CTkButton(
-                    main_container, text="🎯 Parfait ! Continuer", fg_color="#10b981", hover_color="#059669",
-                    text_color="white", corner_radius=16, height=52, font=ctk.CTkFont(size=17, weight="bold"),
-                    border_width=2, border_color="#34d399",
-                    command=lambda: [success_modal.destroy(), modal.destroy()]
-                ).pack(pady=(0, 25), padx=25, fill="x")
-                
-                # Fermer automatiquement après 5 secondes
-                success_modal.after(5000, lambda: [success_modal.destroy(), modal.destroy()])
-                
-                # Rafraîchir la liste des utilisateurs
                 if hasattr(self, 'tab_contents') and "Utilisateurs" in self.tab_contents:
                     for w in self.tab_contents["Utilisateurs"].winfo_children():
                         w.destroy()
                     self._build_users_tab(self.tab_contents["Utilisateurs"])
-                
-                # Mettre à jour immédiatement les statistiques
-                self._update_stats_immediately()
-                
-                # Enregistrer l'action dans le journal d'activité
-                self._log_activity("Création", f"Création de l'utilisateur {prenom} {nom}", f"{prenom} {nom}", f"Matricule: {matricule}, Rôle: {role}")
-                    
-            except Exception as e:
-                errors["Email *"].configure(text=f"Erreur : {e}")
-                entries["Email *"].configure(border_color="#ef4444")
-                if 'conn' in locals():
-                    conn.close()
-        
+                    self._update_stats_immediately()
+                    self._log_activity("Création", f"Création de l'utilisateur {prenom} {nom}", f"{prenom} {nom}", f"Matricule: {matricule}, Rôle: {role}")
+            
+
         # Zone des boutons en bas de la modale - Plus visible et moderne
         buttons_frame = ctk.CTkFrame(modal, fg_color="#ffffff", corner_radius=15, border_width=1, border_color="#e5e7eb")
         buttons_frame.pack(fill="x", pady=(15, 20), padx=20)

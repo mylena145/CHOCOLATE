@@ -258,6 +258,10 @@ class App(ctk.CTk):
             # Arrêter la boucle principale
             self.quit()
             
+
+
+
+            
             # Détruire la fenêtre principale
             self.destroy()
             
