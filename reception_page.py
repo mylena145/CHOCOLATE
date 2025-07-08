@@ -732,20 +732,25 @@ class AddReceptionPopup(ctk.CTkToplevel):
         content = ctk.CTkScrollableFrame(self, fg_color="white")
         content.pack(fill="both", expand=True, padx=18, pady=6)
 
+        # Légende des champs obligatoires
+        legend_frame = ctk.CTkFrame(content, fg_color="#fef3c7", border_width=1, border_color="#f59e0b", corner_radius=8)
+        legend_frame.pack(fill="x", pady=(0, 12))
+        ctk.CTkLabel(legend_frame, text="ℹ️ Les champs marqués d'un * sont obligatoires", font=ctk.CTkFont(size=12), text_color="#92400e").pack(padx=15, pady=8)
+
         # Ligne 1 : Numéro de Bon & Fournisseur
         row1 = ctk.CTkFrame(content, fg_color="white")
         row1.pack(fill="x", pady=(0,12))
         # Numéro de Bon
         bon_frame = ctk.CTkFrame(row1, fg_color="white")
         bon_frame.pack(side="left", expand=True, fill="x", padx=(0,8))
-        ctk.CTkLabel(bon_frame, text="Numéro de Bon *", font=ctk.CTkFont(size=14, weight="bold"), text_color="#374151").pack(anchor="w")
-        self.bon_entry = ctk.CTkEntry(bon_frame, fg_color="#f3f4f6", text_color="#222", border_color="#d1d5db", border_width=1, height=38, font=ctk.CTkFont(size=14))
+        ctk.CTkLabel(bon_frame, text="Numéro de Bon *", font=ctk.CTkFont(size=14, weight="bold"), text_color="#dc2626").pack(anchor="w")
+        self.bon_entry = ctk.CTkEntry(bon_frame, fg_color="#f3f4f6", text_color="#222", border_color="#dc2626", border_width=2, height=38, font=ctk.CTkFont(size=14))
         self.bon_entry.pack(fill="x", pady=(4,0))
         # Fournisseur
         fournisseur_frame = ctk.CTkFrame(row1, fg_color="white")
         fournisseur_frame.pack(side="left", expand=True, fill="x", padx=(8,0))
-        ctk.CTkLabel(fournisseur_frame, text="Fournisseur *", font=ctk.CTkFont(size=14, weight="bold"), text_color="#374151").pack(anchor="w")
-        self.fournisseur_menu = ctk.CTkOptionMenu(fournisseur_frame, values=["Sélectionner un fournisseur", "Dell", "HP", "Lenovo", "Samsung", "Logitech"], fg_color="#f3f4f6", text_color="#222", button_color="#e5e7eb", button_hover_color="#d1d5db", dropdown_fg_color="#f3f4f6", dropdown_text_color="#222", font=ctk.CTkFont(size=14))
+        ctk.CTkLabel(fournisseur_frame, text="Fournisseur *", font=ctk.CTkFont(size=14, weight="bold"), text_color="#dc2626").pack(anchor="w")
+        self.fournisseur_menu = ctk.CTkOptionMenu(fournisseur_frame, values=["Sélectionner un fournisseur", "Dell", "HP", "Lenovo", "Samsung", "Logitech"], fg_color="#f3f4f6", text_color="#222", button_color="#dc2626", button_hover_color="#b91c1c", dropdown_fg_color="#f3f4f6", dropdown_text_color="#222", font=ctk.CTkFont(size=14))
         self.fournisseur_menu.pack(fill="x", pady=(4,0))
 
         # Ligne 2 : Date prévue & Colis attendu
@@ -754,14 +759,14 @@ class AddReceptionPopup(ctk.CTkToplevel):
         # Date prévue
         date_frame = ctk.CTkFrame(row2, fg_color="white")
         date_frame.pack(side="left", expand=True, fill="x", padx=(0,8))
-        ctk.CTkLabel(date_frame, text="Date de Réception Prévue *", font=ctk.CTkFont(size=14, weight="bold"), text_color="#374151").pack(anchor="w")
-        self.date_entry = DateEntry(date_frame, date_pattern="yyyy-mm-dd", font=("Segoe UI", 13), background="#f3f4f6", foreground="#222", borderwidth=1, width=18)
+        ctk.CTkLabel(date_frame, text="Date de Réception Prévue *", font=ctk.CTkFont(size=14, weight="bold"), text_color="#dc2626").pack(anchor="w")
+        self.date_entry = DateEntry(date_frame, date_pattern="yyyy-mm-dd", font=("Segoe UI", 13), background="#f3f4f6", foreground="#222", borderwidth=2, relief="solid", bordercolor="#dc2626", width=18)
         self.date_entry.pack(fill="x", pady=(4,0))
         # Colis attendu
         colis_frame = ctk.CTkFrame(row2, fg_color="white")
         colis_frame.pack(side="left", expand=True, fill="x", padx=(8,0))
-        ctk.CTkLabel(colis_frame, text="Nombre de Colis Attendu *", font=ctk.CTkFont(size=14, weight="bold"), text_color="#374151").pack(anchor="w")
-        self.colis_entry = ctk.CTkEntry(colis_frame, fg_color="#f3f4f6", text_color="#222", border_color="#d1d5db", border_width=1, height=38, font=ctk.CTkFont(size=14))
+        ctk.CTkLabel(colis_frame, text="Nombre de Colis Attendu *", font=ctk.CTkFont(size=14, weight="bold"), text_color="#dc2626").pack(anchor="w")
+        self.colis_entry = ctk.CTkEntry(colis_frame, fg_color="#f3f4f6", text_color="#222", border_color="#dc2626", border_width=2, height=38, font=ctk.CTkFont(size=14))
         self.colis_entry.pack(fill="x", pady=(4,0))
 
         # Ligne 3 : Poids total & Bon d'expédition lié
@@ -770,10 +775,10 @@ class AddReceptionPopup(ctk.CTkToplevel):
         # Poids total
         poids_frame = ctk.CTkFrame(row3, fg_color="white")
         poids_frame.pack(side="left", expand=True, fill="x", padx=(0,8))
-        ctk.CTkLabel(poids_frame, text="Poids Total Attendu (kg) *", font=ctk.CTkFont(size=14, weight="bold"), text_color="#374151").pack(anchor="w")
-        self.poids_entry = ctk.CTkEntry(poids_frame, fg_color="#f3f4f6", text_color="#222", border_color="#d1d5db", border_width=1, height=38, font=ctk.CTkFont(size=14))
+        ctk.CTkLabel(poids_frame, text="Poids Total Attendu (kg) *", font=ctk.CTkFont(size=14, weight="bold"), text_color="#dc2626").pack(anchor="w")
+        self.poids_entry = ctk.CTkEntry(poids_frame, fg_color="#f3f4f6", text_color="#222", border_color="#dc2626", border_width=2, height=38, font=ctk.CTkFont(size=14))
         self.poids_entry.pack(fill="x", pady=(4,0))
-        # Bon d'expédition lié
+        # Bon d'expédition lié (optionnel)
         exp_frame = ctk.CTkFrame(row3, fg_color="white")
         exp_frame.pack(side="left", expand=True, fill="x", padx=(8,0))
         ctk.CTkLabel(exp_frame, text="Bon d'Expédition Lié", font=ctk.CTkFont(size=14, weight="bold"), text_color="#374151").pack(anchor="w")

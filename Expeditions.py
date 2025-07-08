@@ -6,6 +6,8 @@ from stock_management_page import SidebarFrame
 from tkinter import filedialog, messagebox
 from datetime import datetime, date
 import database
+import psycopg2
+from database import PG_CONN
 
 # Import des fonctions de base de données
 try:
@@ -120,13 +122,13 @@ class GestionExpeditionsApp(ctk.CTkFrame):
             if hasattr(self, 'stats_frame'):
                 self.update_stats_display()
             
-            # Mettre à jour le tableau
-            if hasattr(self, 'table_frame'):
-                self.update_table_display()
-            
-            # Mettre à jour les blocs centraux (planning et transporteurs)
+            # Mettre à jour les blocs centraux (vue d'ensemble) AVANT le tableau
             if hasattr(self, 'central_blocks_frame'):
                 self.update_central_blocks()
+            
+            # Mettre à jour le tableau APRÈS la vue d'ensemble
+            if hasattr(self, 'table_frame'):
+                self.update_table_display()
                 
             print("✅ Affichage des expéditions mis à jour avec succès")
                 
@@ -134,14 +136,24 @@ class GestionExpeditionsApp(ctk.CTkFrame):
             print(f"❌ Erreur lors de la mise à jour de l'affichage: {e}")
     
     def update_central_blocks(self):
-        """Met à jour les blocs centraux (planning et transporteurs)"""
+        """Met à jour les blocs centraux (vue d'ensemble) en respectant l'ordre"""
         try:
-            # Vider les blocs centraux existants
-            for widget in self.central_blocks_frame.winfo_children():
-                widget.destroy()
-            
-            # Recréer les blocs centraux avec les nouvelles données
-            self.create_central_blocks()
+            # Vérifier si l'attribut existe avant de l'utiliser
+            if hasattr(self, 'central_blocks_frame') and self.central_blocks_frame:
+                # Sauvegarder la position actuelle
+                current_position = self.central_blocks_frame.pack_info()
+                
+                # Détruire l'ancienne frame
+                self.central_blocks_frame.destroy()
+                
+                # Recréer la vue d'ensemble à la même position
+                self.create_central_blocks()
+                
+                # S'assurer qu'elle reste avant le titre et le tableau
+                if hasattr(self, 'table_title'):
+                    self.central_blocks_frame.pack_configure(before=self.table_title)
+                elif hasattr(self, 'table_frame'):
+                    self.central_blocks_frame.pack_configure(before=self.table_frame)
             
         except Exception as e:
             print(f"❌ Erreur lors de la mise à jour des blocs centraux: {e}")
@@ -166,14 +178,19 @@ class GestionExpeditionsApp(ctk.CTkFrame):
             print(f"❌ Erreur lors de la mise à jour des stats: {e}")
     
     def update_table_display(self):
-        """Met à jour l'affichage du tableau"""
+        """Met à jour l'affichage du tableau APRÈS la vue d'ensemble"""
         try:
-            # Vider le tableau existant
+            # Vider le tableau existant mais préserver le titre
             for widget in self.table_frame.winfo_children():
                 widget.destroy()
             
             # Recréer le tableau avec les nouvelles données
             self.create_expeditions_table()
+            
+            # S'assurer que le tableau reste après le titre et la vue d'ensemble
+            if hasattr(self, 'table_title') and hasattr(self, 'central_blocks_frame'):
+                self.table_title.pack_configure(after=self.central_blocks_frame)
+                self.table_frame.pack_configure(after=self.table_title)
             
         except Exception as e:
             print(f"❌ Erreur lors de la mise à jour du tableau: {e}")
@@ -184,13 +201,13 @@ class GestionExpeditionsApp(ctk.CTkFrame):
             print("🔄 Rafraîchissement des données depuis la base...")
             
             # Recharger les données depuis la BD
-            self.load_expeditions_data()
+        self.load_expeditions_data()
             
             # Mettre à jour complètement l'affichage
             self.update_expeditions_display()
             
             # Afficher une notification de succès
-            if hasattr(self, 'master') and hasattr(self.master, 'show_notification'):
+        if hasattr(self, 'master') and hasattr(self.master, 'show_notification'):
                 self.master.show_notification("✅ Données rafraîchies avec succès")
             else:
                 print("✅ Données rafraîchies avec succès")
@@ -552,24 +569,33 @@ class GestionExpeditionsApp(ctk.CTkFrame):
             ctk.CTkLabel(text_frame, text=stat["desc"], font=ctk.CTkFont(size=12), text_color=stat["color"]).pack(anchor="w")
 
     def create_central_blocks(self):
-        """Création des blocs centraux"""
+        """Création des blocs centraux : urgentes, planning du jour, transporteurs (sans doublon)"""
+        # Détruire l'ancienne frame si elle existe
+        if hasattr(self, 'central_blocks_frame') and self.central_blocks_frame:
+            self.central_blocks_frame.destroy()
+        
+        # Nouvelle frame pour la vue d'ensemble
+        self.central_blocks_frame = ctk.CTkFrame(self.main_content, fg_color="transparent")
+        
+        # S'assurer que la vue d'ensemble se place avant le tableau
+        if hasattr(self, 'table_frame'):
+            self.central_blocks_frame.pack(fill="x", pady=(0, 20), before=self.table_frame)
+        else:
+            self.central_blocks_frame.pack(fill="x", pady=(0, 20))
+
         # Titre de section
-        title_label = ctk.CTkLabel(self.main_content, text="Vue d'ensemble", font=ctk.CTkFont(size=20, weight="bold"), text_color="#1f2937")
+        title_label = ctk.CTkLabel(self.central_blocks_frame, text="Vue d'ensemble", font=ctk.CTkFont(size=20, weight="bold"), text_color="#1f2937")
         title_label.pack(anchor="w", pady=(20, 15))
         
         # Frame pour les blocs
-        blocks_frame = ctk.CTkFrame(self.main_content, fg_color="transparent")
+        blocks_frame = ctk.CTkFrame(self.central_blocks_frame, fg_color="transparent")
         blocks_frame.pack(fill="x", pady=(0, 20))
         
         # Expéditions Urgentes
         urgentes_frame = ctk.CTkFrame(blocks_frame, fg_color="white", border_width=1, border_color="#eee", corner_radius=8)
         urgentes_frame.pack(side="left", expand=True, fill="both", padx=10, pady=5)
-        
         ctk.CTkLabel(urgentes_frame, text="🚨 Expéditions Urgentes", font=ctk.CTkFont(size=18, weight="bold"), text_color="#b91c1c").pack(anchor="w", padx=15, pady=15)
-        
-        # Récupérer les expéditions urgentes depuis les données réelles
         urgent_expeditions = self._get_urgent_expeditions()
-        
         if urgent_expeditions:
             for exp in urgent_expeditions:
                 card = ctk.CTkFrame(urgentes_frame, fg_color="#fef2f2", border_width=2, border_color="#fecaca", corner_radius=8)
@@ -578,13 +604,12 @@ class GestionExpeditionsApp(ctk.CTkFrame):
                 ctk.CTkLabel(card, text=f"{exp['client']} - {exp['carrier']}", font=ctk.CTkFont(size=15), text_color="#b91c1c", fg_color="transparent").pack(anchor="w", padx=10, pady=(2,0))
                 ctk.CTkLabel(card, text=exp["priority"].upper(), font=ctk.CTkFont(size=14, weight="bold"), text_color="#b91c1c", fg_color="transparent").pack(anchor="e", padx=10, pady=(0,5))
         else:
-            # Message si aucune expédition urgente
             no_urgent_frame = ctk.CTkFrame(urgentes_frame, fg_color="#f9fafb", corner_radius=8)
             no_urgent_frame.pack(fill="x", padx=15, pady=5)
             ctk.CTkLabel(no_urgent_frame, text="✅ Aucune expédition urgente", font=ctk.CTkFont(size=14), text_color="#059669", fg_color="transparent").pack(pady=10)
 
         # Planning du Jour
-        if self.planning_frame:
+        if hasattr(self, 'planning_frame') and self.planning_frame:
             self.planning_frame.destroy()
         self.planning_frame = ctk.CTkFrame(blocks_frame, fg_color="white", border_width=1, border_color="#eee", corner_radius=8)
         self.planning_frame.pack(side="left", expand=True, fill="both", padx=10, pady=5)
@@ -605,12 +630,8 @@ class GestionExpeditionsApp(ctk.CTkFrame):
         # Transporteurs
         transp_frame = ctk.CTkFrame(blocks_frame, fg_color="white", border_width=1, border_color="#eee", corner_radius=8)
         transp_frame.pack(side="left", expand=True, fill="both", padx=10, pady=5)
-        
         ctk.CTkLabel(transp_frame, text="🚛 Transporteurs", font=ctk.CTkFont(size=18, weight="bold"), text_color="#20bf6b").pack(anchor="w", padx=15, pady=15)
-        
-        # Récupérer les statistiques des transporteurs depuis les données réelles
         carrier_stats = self._get_carrier_stats()
-        
         if carrier_stats:
             for carrier in carrier_stats:
                 item_frame = ctk.CTkFrame(transp_frame, fg_color="transparent")
@@ -619,19 +640,24 @@ class GestionExpeditionsApp(ctk.CTkFrame):
                 ctk.CTkLabel(item_frame, text=f"Statut: {carrier['statut']}", font=ctk.CTkFont(size=15), text_color=carrier["color"]).pack(anchor="w")
                 ctk.CTkLabel(item_frame, text=f"{carrier['colis']} colis", font=ctk.CTkFont(size=14), text_color="#666").pack(anchor="e")
         else:
-            # Message si aucun transporteur
             no_carrier_frame = ctk.CTkFrame(transp_frame, fg_color="#f9fafb", corner_radius=8)
             no_carrier_frame.pack(fill="x", padx=15, pady=5)
             ctk.CTkLabel(no_carrier_frame, text="🚛 Aucun transporteur configuré", font=ctk.CTkFont(size=14), text_color="#6b7280", fg_color="transparent").pack(pady=10)
 
     def create_expedition_table(self):
-        """Création du tableau des expéditions"""
-        # Titre du tableau
-        table_title = ctk.CTkLabel(self.main_content, text="Liste des Expéditions", font=ctk.CTkFont(size=20, weight="bold"), text_color="#1f2937")
-        table_title.pack(anchor="w", pady=(20, 10))
+        """Création du tableau des expéditions APRÈS la vue d'ensemble"""
+        # Titre du tableau - stocké comme attribut de classe
+        self.table_title = ctk.CTkLabel(self.main_content, text="Liste des Expéditions", font=ctk.CTkFont(size=20, weight="bold"), text_color="#1f2937")
         
         # Frame du tableau
         self.table_frame = ctk.CTkFrame(self.main_content, fg_color="white", corner_radius=8, border_width=1, border_color="#e5e7eb")
+        
+        # S'assurer que le titre se place après la vue d'ensemble et avant le tableau
+        if hasattr(self, 'central_blocks_frame'):
+            self.table_title.pack(anchor="w", pady=(20, 10), after=self.central_blocks_frame)
+            self.table_frame.pack(fill="x", pady=(0, 20), after=self.table_title)
+        else:
+            self.table_title.pack(anchor="w", pady=(20, 10))
         self.table_frame.pack(fill="x", pady=(0, 20))
         
         # Créer le contenu du tableau
@@ -736,6 +762,11 @@ class GestionExpeditionsApp(ctk.CTkFrame):
         # Titre du formulaire
         ctk.CTkLabel(form_frame, text="Informations de l'expédition", font=ctk.CTkFont(size=18, weight="bold"), text_color="#374151").pack(anchor="w", padx=20, pady=(20, 15))
         
+        # Légende des champs obligatoires
+        legend_frame = ctk.CTkFrame(form_frame, fg_color="#fef3c7", border_width=1, border_color="#f59e0b", corner_radius=8)
+        legend_frame.pack(fill="x", padx=20, pady=(0, 15))
+        ctk.CTkLabel(legend_frame, text="ℹ️ Les champs marqués d'un * sont obligatoires", font=ctk.CTkFont(size=12), text_color="#92400e").pack(padx=15, pady=8)
+        
         # Grille pour les champs
         fields_frame = ctk.CTkFrame(form_frame, fg_color="transparent")
         fields_frame.pack(fill="x", padx=20, pady=(0, 20))
@@ -749,26 +780,34 @@ class GestionExpeditionsApp(ctk.CTkFrame):
         observation_var = tk.StringVar(value=expedition.get('observation', ''))
         status_var = tk.StringVar(value=expedition.get('status', 'preparing'))
         
-        # Champs du formulaire
+        # Champs du formulaire avec indication des champs obligatoires
         fields = [
-            ("Client:", client_var, "text"),
-            ("Transporteur:", carrier_var, "combo", ["DHL Express", "Chronopost", "Colissimo", "UPS"]),
-            ("Priorité:", priority_var, "combo", ["haute", "moyenne", "basse"]),
-            ("Statut:", status_var, "combo", ["preparing", "in-transit", "delivered"]),
-            ("Poids (kg):", weight_var, "text"),
-            ("Nombre de colis:", packages_var, "text"),
+            ("Client *", client_var, "text", True),  # Obligatoire
+            ("Transporteur", carrier_var, "combo", False, ["DHL Express", "Chronopost", "Colissimo", "UPS"]),
+            ("Priorité", priority_var, "combo", False, ["haute", "moyenne", "basse"]),
+            ("Statut", status_var, "combo", False, ["preparing", "in-transit", "delivered"]),
+            ("Poids (kg) *", weight_var, "text", True),  # Obligatoire
+            ("Nombre de colis *", packages_var, "text", True),  # Obligatoire
         ]
         
-        for i, (label, var, field_type, *args) in enumerate(fields):
+        for i, (label, var, field_type, is_required, *args) in enumerate(fields):
             row = i // 2
             col = i % 2
             
-            # Label
-            ctk.CTkLabel(fields_frame, text=label, font=ctk.CTkFont(size=14, weight="bold"), text_color="#374151").grid(row=row*2, column=col, sticky="w", padx=(0, 10), pady=(15, 5))
+            # Frame pour le label et l'indicateur obligatoire
+            label_frame = ctk.CTkFrame(fields_frame, fg_color="transparent")
+            label_frame.grid(row=row*2, column=col, sticky="w", padx=(0, 10), pady=(15, 5))
             
-            # Champ
+            # Label avec couleur selon si obligatoire
+            label_color = "#dc2626" if is_required else "#374151"  # Rouge si obligatoire
+            label_text = ctk.CTkLabel(label_frame, text=label, font=ctk.CTkFont(size=14, weight="bold"), text_color=label_color)
+            label_text.pack(side="left")
+            
+            # Champ avec bordure colorée si obligatoire
             if field_type == "text":
                 entry = ctk.CTkEntry(fields_frame, textvariable=var, width=200, height=35, font=ctk.CTkFont(size=14))
+                if is_required:
+                    entry.configure(border_color="#dc2626", border_width=2)  # Bordure rouge pour obligatoire
                 entry.grid(row=row*2+1, column=col, sticky="ew", padx=(0, 20), pady=(0, 15))
             elif field_type == "combo":
                 combo = ctk.CTkOptionMenu(fields_frame, variable=var, values=args[0], width=200, height=35, font=ctk.CTkFont(size=14))
@@ -776,7 +815,7 @@ class GestionExpeditionsApp(ctk.CTkFrame):
             
             fields_frame.grid_columnconfigure(col, weight=1)
         
-        # Champ observation (pleine largeur)
+        # Champ observation (pleine largeur) - optionnel
         ctk.CTkLabel(fields_frame, text="Observation:", font=ctk.CTkFont(size=14, weight="bold"), text_color="#374151").grid(row=len(fields)*2, column=0, columnspan=2, sticky="w", padx=(0, 10), pady=(15, 5))
         observation_entry = ctk.CTkEntry(fields_frame, textvariable=observation_var, width=400, height=35, font=ctk.CTkFont(size=14))
         observation_entry.grid(row=len(fields)*2+1, column=0, columnspan=2, sticky="ew", padx=(0, 20), pady=(0, 15))
@@ -785,11 +824,36 @@ class GestionExpeditionsApp(ctk.CTkFrame):
         buttons_frame = ctk.CTkFrame(modal, fg_color="transparent")
         buttons_frame.pack(pady=(0, 20))
         
-        def update_expedition():
+        def save_expedition_update():
             """Mettre à jour l'expédition"""
-            if not client_var.get() or not weight_var.get() or not packages_var.get():
-                # Afficher une erreur
-                error_label = ctk.CTkLabel(modal, text="❌ Veuillez remplir tous les champs obligatoires", text_color="#ef4444", font=ctk.CTkFont(size=14))
+            # Vérifier les champs obligatoires avec messages spécifiques
+            missing_fields = []
+            if not client_var.get().strip():
+                missing_fields.append("Client")
+            if not weight_var.get().strip():
+                missing_fields.append("Poids")
+            if not packages_var.get().strip():
+                missing_fields.append("Nombre de colis")
+            
+            if missing_fields:
+                # Afficher une erreur détaillée
+                error_text = f"❌ Champs obligatoires manquants : {', '.join(missing_fields)}"
+                error_label = ctk.CTkLabel(modal, text=error_text, text_color="#ef4444", font=ctk.CTkFont(size=14, weight="bold"))
+                error_label.pack(pady=10)
+                modal.after(4000, error_label.destroy)
+                return
+            
+            # Validation du poids
+            poids_str = weight_var.get().strip()
+            try:
+                poids_float = float(poids_str) if poids_str else 0.0
+                if poids_float < 0:
+                    error_label = ctk.CTkLabel(modal, text="❌ Le poids ne peut pas être négatif", text_color="#ef4444", font=ctk.CTkFont(size=14, weight="bold"))
+                    error_label.pack(pady=10)
+                    modal.after(3000, error_label.destroy)
+                    return
+            except ValueError:
+                error_label = ctk.CTkLabel(modal, text="❌ Le poids doit être un nombre valide", text_color="#ef4444", font=ctk.CTkFont(size=14, weight="bold"))
                 error_label.pack(pady=10)
                 modal.after(3000, error_label.destroy)
                 return
@@ -800,9 +864,13 @@ class GestionExpeditionsApp(ctk.CTkFrame):
                 'reference_commande': expedition.get('trackingNumber', ''),
                 'date_livraison': expedition.get('deliveryDate', datetime.now().strftime('%Y-%m-%d')),
                 'transporteurs': carrier_var.get(),
+                'priorite': priority_var.get(),
+                'poids': poids_str,
                 'observation': observation_var.get(),
                 'liste_articles_livres': expedition.get('articles', '')
             }
+            
+            print(f"🔄 Données de mise à jour: poids={poids_str} kg")
             
             try:
                 if DB_AVAILABLE:
@@ -814,6 +882,10 @@ class GestionExpeditionsApp(ctk.CTkFrame):
                         self.load_expeditions_data()
                         # Mettre à jour l'affichage
                         self.update_expeditions_display()
+                        # Mettre à jour les blocs centraux (notifications, planning, etc.)
+                        self.update_central_blocks()
+                        # Mettre à jour les statistiques
+                        self.update_stats_display()
                         success_msg = "✅ Expédition mise à jour avec succès !"
                     else:
                         print("❌ Erreur lors de la mise à jour dans la BD")
@@ -842,7 +914,7 @@ class GestionExpeditionsApp(ctk.CTkFrame):
         
         # Boutons
         ctk.CTkButton(buttons_frame, text="❌ Annuler", width=120, height=40, fg_color="#ef4444", hover_color="#dc2626", command=cancel_update).pack(side="left", padx=10)
-        ctk.CTkButton(buttons_frame, text="✅ Mettre à jour", width=150, height=40, fg_color="#10b981", hover_color="#059669", command=update_expedition).pack(side="left", padx=10)
+        ctk.CTkButton(buttons_frame, text="✅ Mettre à jour", width=150, height=40, fg_color="#10b981", hover_color="#059669", command=save_expedition_update).pack(side="left", padx=10)
 
     def delete_expedition(self, expedition):
         """Supprimer une expédition"""
@@ -889,6 +961,10 @@ class GestionExpeditionsApp(ctk.CTkFrame):
                         self.load_expeditions_data()
                         # Mettre à jour l'affichage
                         self.update_expeditions_display()
+                        # Mettre à jour les blocs centraux (notifications, planning, etc.)
+                        self.update_central_blocks()
+                        # Mettre à jour les statistiques
+                        self.update_stats_display()
                         success_msg = "✅ Expédition supprimée avec succès !"
                     else:
                         print("❌ Erreur lors de la suppression dans la BD")
@@ -896,6 +972,10 @@ class GestionExpeditionsApp(ctk.CTkFrame):
                 else:
                     # Mode démonstration
                     self._delete_local_expedition(expedition['id'])
+                    # Mettre à jour les blocs centraux (notifications, planning, etc.)
+                    self.update_central_blocks()
+                    # Mettre à jour les statistiques
+                    self.update_stats_display()
                     success_msg = "✅ Expédition supprimée (mode démonstration)"
                 
                 # Fermer la modal de confirmation
@@ -962,6 +1042,11 @@ class GestionExpeditionsApp(ctk.CTkFrame):
         # Titre du formulaire
         ctk.CTkLabel(form_frame, text="Informations de l'expédition", font=ctk.CTkFont(size=18, weight="bold"), text_color="#374151").pack(anchor="w", padx=20, pady=(20, 15))
         
+        # Légende des champs obligatoires
+        legend_frame = ctk.CTkFrame(form_frame, fg_color="#fef3c7", border_width=1, border_color="#f59e0b", corner_radius=8)
+        legend_frame.pack(fill="x", padx=20, pady=(0, 15))
+        ctk.CTkLabel(legend_frame, text="ℹ️ Les champs marqués d'un * sont obligatoires", font=ctk.CTkFont(size=12), text_color="#92400e").pack(padx=15, pady=8)
+        
         # Grille pour les champs
         fields_frame = ctk.CTkFrame(form_frame, fg_color="transparent")
         fields_frame.pack(fill="x", padx=20, pady=(0, 20))
@@ -972,26 +1057,35 @@ class GestionExpeditionsApp(ctk.CTkFrame):
         priority_var = tk.StringVar(value="moyenne")
         weight_var = tk.StringVar(value="")
         packages_var = tk.StringVar(value="")
+        observation_var = tk.StringVar(value="")
         
-        # Champs du formulaire
+        # Champs du formulaire avec indication des champs obligatoires
         fields = [
-            ("Client:", client_var, "text"),
-            ("Transporteur:", carrier_var, "combo", ["DHL Express", "Chronopost", "Colissimo", "UPS"]),
-            ("Priorité:", priority_var, "combo", ["haute", "moyenne", "basse"]),
-            ("Poids (kg):", weight_var, "text"),
-            ("Nombre de colis:", packages_var, "text"),
+            ("Client *", client_var, "text", True),  # Obligatoire
+            ("Transporteur", carrier_var, "combo", False, ["DHL Express", "Chronopost", "Colissimo", "UPS"]),
+            ("Priorité", priority_var, "combo", False, ["haute", "moyenne", "basse"]),
+            ("Poids (kg) *", weight_var, "text", True),  # Obligatoire
+            ("Nombre de colis *", packages_var, "text", True),  # Obligatoire
         ]
         
-        for i, (label, var, field_type, *args) in enumerate(fields):
+        for i, (label, var, field_type, is_required, *args) in enumerate(fields):
             row = i // 2
             col = i % 2
             
-            # Label
-            ctk.CTkLabel(fields_frame, text=label, font=ctk.CTkFont(size=14, weight="bold"), text_color="#374151").grid(row=row*2, column=col, sticky="w", padx=(0, 10), pady=(15, 5))
+            # Frame pour le label et l'indicateur obligatoire
+            label_frame = ctk.CTkFrame(fields_frame, fg_color="transparent")
+            label_frame.grid(row=row*2, column=col, sticky="w", padx=(0, 10), pady=(15, 5))
             
-            # Champ
+            # Label avec couleur selon si obligatoire
+            label_color = "#dc2626" if is_required else "#374151"  # Rouge si obligatoire
+            label_text = ctk.CTkLabel(label_frame, text=label, font=ctk.CTkFont(size=14, weight="bold"), text_color=label_color)
+            label_text.pack(side="left")
+            
+            # Champ avec bordure colorée si obligatoire
             if field_type == "text":
                 entry = ctk.CTkEntry(fields_frame, textvariable=var, width=200, height=35, font=ctk.CTkFont(size=14))
+                if is_required:
+                    entry.configure(border_color="#dc2626", border_width=2)  # Bordure rouge pour obligatoire
                 entry.grid(row=row*2+1, column=col, sticky="ew", padx=(0, 20), pady=(0, 15))
             elif field_type == "combo":
                 combo = ctk.CTkOptionMenu(fields_frame, variable=var, values=args[0], width=200, height=35, font=ctk.CTkFont(size=14))
@@ -999,28 +1093,62 @@ class GestionExpeditionsApp(ctk.CTkFrame):
             
             fields_frame.grid_columnconfigure(col, weight=1)
         
+        # Champ observation (pleine largeur) - optionnel
+        ctk.CTkLabel(fields_frame, text="Observation:", font=ctk.CTkFont(size=14, weight="bold"), text_color="#374151").grid(row=len(fields)*2, column=0, columnspan=2, sticky="w", padx=(0, 10), pady=(15, 5))
+        observation_entry = ctk.CTkEntry(fields_frame, textvariable=observation_var, width=400, height=35, font=ctk.CTkFont(size=14))
+        observation_entry.grid(row=len(fields)*2+1, column=0, columnspan=2, sticky="ew", padx=(0, 20), pady=(0, 15))
+        
         # Boutons d'action
         buttons_frame = ctk.CTkFrame(modal, fg_color="transparent")
         buttons_frame.pack(pady=(0, 20))
         
         def create_expedition():
             """Créer l'expédition"""
-            if not client_var.get() or not weight_var.get() or not packages_var.get():
-                # Afficher une erreur
-                error_label = ctk.CTkLabel(modal, text="❌ Veuillez remplir tous les champs obligatoires", text_color="#ef4444", font=ctk.CTkFont(size=14))
+            # Vérifier les champs obligatoires avec messages spécifiques
+            missing_fields = []
+            if not client_var.get().strip():
+                missing_fields.append("Client")
+            if not weight_var.get().strip():
+                missing_fields.append("Poids")
+            if not packages_var.get().strip():
+                missing_fields.append("Nombre de colis")
+            
+            if missing_fields:
+                # Afficher une erreur détaillée
+                error_text = f"❌ Champs obligatoires manquants : {', '.join(missing_fields)}"
+                error_label = ctk.CTkLabel(modal, text=error_text, text_color="#ef4444", font=ctk.CTkFont(size=14, weight="bold"))
+                error_label.pack(pady=10)
+                modal.after(4000, error_label.destroy)
+                return
+            
+            # Validation du poids
+            poids_str = weight_var.get().strip()
+            try:
+                poids_float = float(poids_str) if poids_str else 0.0
+                if poids_float < 0:
+                    error_label = ctk.CTkLabel(modal, text="❌ Le poids ne peut pas être négatif", text_color="#ef4444", font=ctk.CTkFont(size=14, weight="bold"))
+                    error_label.pack(pady=10)
+                    modal.after(3000, error_label.destroy)
+                    return
+            except ValueError:
+                error_label = ctk.CTkLabel(modal, text="❌ Le poids doit être un nombre valide", text_color="#ef4444", font=ctk.CTkFont(size=14, weight="bold"))
                 error_label.pack(pady=10)
                 modal.after(3000, error_label.destroy)
                 return
             
             # Préparer les données pour la BD
             expedition_data = {
-                'client': client_var.get(),
-                'reference_commande': f"REF-{datetime.now().strftime('%Y%m%d%H%M')}",
+                'client': client_var.get().strip(),
+                'reference_commande': f"REF{datetime.now().strftime('%H%M')[-2:]}",  # Référence courte (5 caractères max)
                 'date_livraison': datetime.now().strftime('%Y-%m-%d'),
                 'transporteurs': carrier_var.get(),
-                'observation': f"Poids: {weight_var.get()}kg, Colis: {packages_var.get()}",
+                'priorite': priority_var.get(),
+                'poids': poids_str,
+                'observation': observation_var.get().strip() or f"Poids: {poids_str}kg, Colis: {packages_var.get()}",
                 'liste_articles_livres': ''
             }
+            
+            print(f"🔄 Données de création: poids={poids_str} kg")
             
             try:
                 if DB_AVAILABLE:
@@ -1032,13 +1160,17 @@ class GestionExpeditionsApp(ctk.CTkFrame):
                         self.load_expeditions_data()
                         # Mettre à jour l'affichage
                         self.update_expeditions_display()
+                        # Mettre à jour les blocs centraux (notifications, planning, etc.)
+                        self.update_central_blocks()
+                        # Mettre à jour les statistiques
+                        self.update_stats_display()
                         success_msg = "✅ Expédition créée avec succès !"
                     else:
                         print("❌ Erreur lors de la création dans la BD")
                         success_msg = "❌ Erreur lors de la création"
                 else:
                     # Mode démonstration
-                    self._add_local_expedition(expedition_data)
+                    _add_local_expedition(expedition_data)
                     success_msg = "✅ Expédition créée (mode démonstration)"
                 
                 # Afficher un message de succès
@@ -1051,13 +1183,20 @@ class GestionExpeditionsApp(ctk.CTkFrame):
             except Exception as e:
                 print(f"❌ Erreur lors de la création: {e}")
                 # Fallback avec données locales
-                self._add_local_expedition(expedition_data)
+                _add_local_expedition(expedition_data)
                 success_label = ctk.CTkLabel(modal, text="✅ Expédition créée (mode démonstration)", text_color="#10b981", font=ctk.CTkFont(size=16, weight="bold"))
                 success_label.pack(pady=10)
                 modal.after(2000, modal.destroy)
         
         def _add_local_expedition(expedition_data):
             """Ajoute une expédition en mode local (démonstration)"""
+            # Convertir le poids en float
+            poids = 0.0
+            try:
+                poids = float(expedition_data.get('poids', 0))
+            except (ValueError, TypeError):
+                poids = 0.0
+            
             new_expedition = {
                 'id': len(self.expeditions_data) + 1,
                 'number': f'BE-2024-{len(self.expeditions_data) + 1:03d}',
@@ -1066,9 +1205,9 @@ class GestionExpeditionsApp(ctk.CTkFrame):
                 'deliveryDate': expedition_data['date_livraison'],
                 'actualDeliveryDate': None,
                 'carrier': expedition_data['transporteurs'],
-                'priority': 'moyenne',
+                'priority': expedition_data.get('priorite', 'moyenne'),
                 'packages': 1,
-                'totalWeight': 0.0,
+                'totalWeight': poids,
                 'status': 'preparing',
                 'trackingNumber': expedition_data['reference_commande'],
                 'observation': expedition_data['observation'],
@@ -1078,8 +1217,14 @@ class GestionExpeditionsApp(ctk.CTkFrame):
             # Ajouter à la liste
             self.expeditions_data.append(new_expedition)
             
-            # Mettre à jour l'affichage
+            # Mettre à jour l'affichage principal
             self.update_expeditions_display()
+            
+            # Mettre à jour les blocs centraux (notifications, planning, etc.)
+            self.update_central_blocks()
+            
+            # Mettre à jour les statistiques
+            self.update_stats_display()
         
         def cancel_creation():
             """Annuler la création"""
@@ -1090,7 +1235,7 @@ class GestionExpeditionsApp(ctk.CTkFrame):
         ctk.CTkButton(buttons_frame, text="✅ Créer l'expédition", width=150, height=40, fg_color="#10b981", hover_color="#059669", command=create_expedition).pack(side="left", padx=10)
 
     def action_planning(self):
-        """Afficher le planning"""
+        """Afficher le planning dynamique basé sur la BD"""
         print("Affichage du planning")
         
         # Créer une fenêtre modale pour le planning
@@ -1109,134 +1254,179 @@ class GestionExpeditionsApp(ctk.CTkFrame):
         main_frame = ctk.CTkScrollableFrame(modal, fg_color="transparent")
         main_frame.pack(fill="both", expand=True, padx=20, pady=(0, 20))
         
-        # Planning par jour
-        days = [
-            {"day": "Lundi 18 Mars", "expeditions": [
-                {"time": "08:00", "action": "Préparation commandes prioritaires", "status": "Terminé", "color": "#10b981"},
-                {"time": "10:00", "action": "Enlèvement DHL Express", "status": "En cours", "color": "#3b82f6"},
-                {"time": "14:00", "action": "Enlèvement Chronopost", "status": "Planifié", "color": "#f59e0b"},
-            ]},
-            {"day": "Mardi 19 Mars", "expeditions": [
-                {"time": "09:00", "action": "Préparation commandes standard", "status": "À venir", "color": "#6b7280"},
-                {"time": "11:00", "action": "Enlèvement Colissimo", "status": "À venir", "color": "#6b7280"},
-                {"time": "15:00", "action": "Préparation J+1", "status": "À venir", "color": "#6b7280"},
-            ]},
-            {"day": "Mercredi 20 Mars", "expeditions": [
-                {"time": "08:30", "action": "Préparation commandes urgentes", "status": "À venir", "color": "#6b7280"},
-                {"time": "12:00", "action": "Enlèvement UPS", "status": "À venir", "color": "#6b7280"},
-            ]},
-        ]
+        # Récupérer le planning dynamique depuis la BD
+        planning = self._get_today_planning()
+        if not planning:
+            ctk.CTkLabel(main_frame, text="📅 Aucune expédition prévue aujourd'hui", font=ctk.CTkFont(size=18, weight="bold"), text_color="#6b7280").pack(pady=30)
+            return
         
-        for day_data in days:
-            # Frame pour chaque jour
-            day_frame = ctk.CTkFrame(main_frame, fg_color="white", border_width=1, border_color="#e5e7eb", corner_radius=8)
-            day_frame.pack(fill="x", pady=(0, 15))
-            
-            # Titre du jour
-            ctk.CTkLabel(day_frame, text=day_data["day"], font=ctk.CTkFont(size=18, weight="bold"), text_color="#1f2937").pack(anchor="w", padx=20, pady=(15, 10))
-            
-            # Expéditions du jour
-            for exp in day_data["expeditions"]:
-                exp_frame = ctk.CTkFrame(day_frame, fg_color="#f9fafb", corner_radius=6)
-                exp_frame.pack(fill="x", padx=20, pady=5)
-                
-                # Contenu de l'expédition
-                content_frame = ctk.CTkFrame(exp_frame, fg_color="transparent")
-                content_frame.pack(fill="x", padx=15, pady=10)
-                
-                # Heure
-                ctk.CTkLabel(content_frame, text=exp["time"], font=ctk.CTkFont(size=16, weight="bold"), text_color="#374151").pack(side="left")
-                
-                # Action
-                ctk.CTkLabel(content_frame, text=exp["action"], font=ctk.CTkFont(size=14), text_color="#6b7280").pack(side="left", padx=(20, 0))
-                
-                # Statut
-                ctk.CTkLabel(content_frame, text=exp["status"], font=ctk.CTkFont(size=14, weight="bold"), text_color=exp["color"]).pack(side="right")
+        # Afficher chaque créneau du planning
+        for slot in planning:
+            slot_frame = ctk.CTkFrame(main_frame, fg_color="white", border_width=1, border_color="#e5e7eb", corner_radius=8)
+            slot_frame.pack(fill="x", pady=(0, 15))
+            ctk.CTkLabel(slot_frame, text=slot.get("heure", ""), font=ctk.CTkFont(size=18, weight="bold"), text_color="#3867d6").pack(anchor="w", padx=20, pady=(15, 10))
+            ctk.CTkLabel(slot_frame, text=slot["desc"], font=ctk.CTkFont(size=15), text_color="#374151").pack(anchor="w", padx=20, pady=(0, 5))
+            ctk.CTkLabel(slot_frame, text=slot["statut"], font=ctk.CTkFont(size=14, weight="bold"), text_color=slot["color"]).pack(anchor="e", padx=20, pady=(0, 10))
         
         # Bouton de fermeture
         ctk.CTkButton(modal, text="Fermer", width=120, height=40, command=modal.destroy).pack(pady=20)
 
     def open_tracking_modal(self):
-        """Ouvrir la modal de suivi"""
-        print("Ouverture de la modal de suivi")
+        """Ouvrir la modal de suivi avancé"""
+        print("Ouverture de la modal de suivi avancé")
         
         # Créer une fenêtre modale pour le suivi
         modal = ctk.CTkToplevel(self)
-        modal.title("Suivi des Expéditions")
-        modal.geometry("900x600")
+        modal.title("🔍 Suivi Avancé des Expéditions")
+        modal.geometry("1000x700")
         modal.configure(fg_color='white')
         modal.grab_set()
         modal.resizable(True, True)
         
-        # Titre
-        title_label = ctk.CTkLabel(modal, text="🔍 Suivi des Expéditions", font=ctk.CTkFont(size=24, weight="bold"), text_color="#1f2937")
-        title_label.pack(pady=(20, 30))
+        # Titre principal
+        title_frame = ctk.CTkFrame(modal, fg_color="transparent")
+        title_frame.pack(fill="x", padx=20, pady=(20, 10))
         
-        # Frame de recherche
-        search_frame = ctk.CTkFrame(modal, fg_color="white", border_width=1, border_color="#e5e7eb", corner_radius=8)
+        ctk.CTkLabel(title_frame, text="🔍 Suivi Avancé des Expéditions", font=ctk.CTkFont(size=24, weight="bold"), text_color="#1f2937").pack(side="left")
+        
+        # Bouton de rafraîchissement
+        refresh_btn = ctk.CTkButton(title_frame, text="🔄 Actualiser", width=100, height=32, fg_color="#3b82f6", hover_color="#2563eb", command=lambda: refresh_tracking())
+        refresh_btn.pack(side="right")
+        
+        # Frame de recherche avancée
+        search_frame = ctk.CTkFrame(modal, fg_color="#f8fafc", border_width=1, border_color="#e2e8f0", corner_radius=12)
         search_frame.pack(fill="x", padx=20, pady=(0, 20))
         
-        ctk.CTkLabel(search_frame, text="Rechercher une expédition", font=ctk.CTkFont(size=16, weight="bold"), text_color="#374151").pack(anchor="w", padx=20, pady=(15, 10))
+        # Titre de recherche
+        ctk.CTkLabel(search_frame, text="🔎 Recherche d'Expédition", font=ctk.CTkFont(size=18, weight="bold"), text_color="#374151").pack(anchor="w", padx=20, pady=(15, 10))
         
-        # Champ de recherche
+        # Frame pour les champs de recherche
+        search_fields_frame = ctk.CTkFrame(search_frame, fg_color="transparent")
+        search_fields_frame.pack(fill="x", padx=20, pady=(0, 15))
+        
+        # Variables de recherche
         search_var = tk.StringVar()
-        search_entry = ctk.CTkEntry(search_frame, textvariable=search_var, placeholder_text="Numéro d'expédition (ex: BE-2024-087)", width=300, height=35)
-        search_entry.pack(side="left", padx=(20, 10), pady=(0, 15))
+        status_filter_var = tk.StringVar(value="Tous")
+        carrier_filter_var = tk.StringVar(value="Tous")
         
-        def search_expedition():
-            """Rechercher une expédition"""
-            search_term = search_var.get().strip()
-            if not search_term:
-                return
-            
-            try:
-                if DB_AVAILABLE:
-                    # Rechercher dans la base de données
-                    search_results = search_expedition(search_term)
-                    if search_results:
-                        found_expedition = search_results[0]  # Prendre le premier résultat
-                        show_expedition_details(found_expedition)
-                    else:
-                        show_not_found()
-                else:
-                    # Recherche locale
-                    found_expedition = None
-                    for exp in self.expeditions_data:
-                        if search_term.upper() in exp['number'].upper():
-                            found_expedition = exp
-                            break
-                    
-                    if found_expedition:
-                        show_expedition_details(found_expedition)
-                    else:
-                        show_not_found()
-                        
-            except Exception as e:
-                print(f"❌ Erreur lors de la recherche: {e}")
-                show_not_found()
+        # Numéro d'expédition
+        ctk.CTkLabel(search_fields_frame, text="Numéro d'expédition:", font=ctk.CTkFont(size=14, weight="bold"), text_color="#374151").grid(row=0, column=0, sticky="w", padx=(0, 10), pady=5)
+        search_entry = ctk.CTkEntry(search_fields_frame, textvariable=search_var, placeholder_text="BE-2024-001", width=200, height=35)
+        search_entry.grid(row=0, column=1, sticky="w", padx=(0, 20), pady=5)
         
-        ctk.CTkButton(search_frame, text="🔍 Rechercher", width=120, height=35, command=search_expedition).pack(side="left", padx=(0, 20), pady=(0, 15))
+        # Filtre par statut
+        ctk.CTkLabel(search_fields_frame, text="Statut:", font=ctk.CTkFont(size=14, weight="bold"), text_color="#374151").grid(row=0, column=2, sticky="w", padx=(0, 10), pady=5)
+        status_combo = ctk.CTkOptionMenu(search_fields_frame, variable=status_filter_var, values=["Tous", "En préparation", "Expédiée", "En transit", "Livrée"], width=120, height=35)
+        status_combo.grid(row=0, column=3, sticky="w", padx=(0, 20), pady=5)
+        
+        # Filtre par transporteur
+        ctk.CTkLabel(search_fields_frame, text="Transporteur:", font=ctk.CTkFont(size=14, weight="bold"), text_color="#374151").grid(row=0, column=4, sticky="w", padx=(0, 10), pady=5)
+        carrier_combo = ctk.CTkOptionMenu(search_fields_frame, variable=carrier_filter_var, values=["Tous", "DHL Express", "Chronopost", "Colissimo", "UPS"], width=120, height=35)
+        carrier_combo.grid(row=0, column=5, sticky="w", padx=(0, 20), pady=5)
+        
+        # Bouton de recherche
+        search_btn = ctk.CTkButton(search_fields_frame, text="🔍 Rechercher", width=120, height=35, fg_color="#10b981", hover_color="#059669", command=lambda: perform_search())
+        search_btn.grid(row=0, column=6, sticky="w", pady=5)
         
         # Frame pour les résultats
         results_frame = ctk.CTkFrame(modal, fg_color="transparent")
         results_frame.pack(fill="both", expand=True, padx=20, pady=(0, 20))
         
-        def show_expedition_details(expedition):
-            """Afficher les détails d'une expédition"""
+        def perform_search():
+            """Effectuer la recherche avec filtres"""
+            search_term = search_var.get().strip()
+            status_filter = status_filter_var.get()
+            carrier_filter = carrier_filter_var.get()
+            
             # Nettoyer les résultats précédents
             for widget in results_frame.winfo_children():
                 widget.destroy()
             
-            # Frame des détails
-            details_frame = ctk.CTkFrame(results_frame, fg_color="white", border_width=1, border_color="#e5e7eb", corner_radius=8)
-            details_frame.pack(fill="both", expand=True)
+            try:
+                if DB_AVAILABLE:
+                    # Recherche dans la base de données avec filtres
+                    found_expeditions = self._search_expeditions_db(search_term, status_filter, carrier_filter)
+                    else:
+                    # Recherche locale avec filtres
+                    found_expeditions = self._search_expeditions_local(search_term, status_filter, carrier_filter)
+                
+                if found_expeditions:
+                    show_search_results(found_expeditions)
+                    else:
+                    show_no_results()
+                        
+            except Exception as e:
+                print(f"❌ Erreur lors de la recherche: {e}")
+                show_no_results()
+        
+        def show_search_results(expeditions):
+            """Afficher les résultats de recherche"""
+            # Titre des résultats
+            results_title = ctk.CTkLabel(results_frame, text=f"📋 Résultats ({len(expeditions)} expédition(s))", font=ctk.CTkFont(size=18, weight="bold"), text_color="#374151")
+            results_title.pack(anchor="w", pady=(0, 15))
+            
+            # Frame scrollable pour les résultats
+            scroll_frame = ctk.CTkScrollableFrame(results_frame, fg_color="transparent")
+            scroll_frame.pack(fill="both", expand=True)
+            
+            for expedition in expeditions:
+                # Carte d'expédition
+                exp_card = ctk.CTkFrame(scroll_frame, fg_color="white", border_width=1, border_color="#e5e7eb", corner_radius=8)
+                exp_card.pack(fill="x", pady=(0, 10))
+                
+                # En-tête de la carte
+                header_frame = ctk.CTkFrame(exp_card, fg_color="transparent")
+                header_frame.pack(fill="x", padx=15, pady=(15, 10))
+                
+                # Numéro et statut
+                ctk.CTkLabel(header_frame, text=f"📦 {expedition['number']}", font=ctk.CTkFont(size=16, weight="bold"), text_color="#1f2937").pack(side="left")
+                
+                # Badge de statut
+                status_color = self._get_status_color(expedition['status'])
+                status_badge = ctk.CTkFrame(header_frame, fg_color=status_color, corner_radius=12)
+                status_badge.pack(side="right", padx=(10, 0))
+                ctk.CTkLabel(status_badge, text=expedition['status'].title(), font=ctk.CTkFont(size=12, weight="bold"), text_color="white").pack(padx=8, pady=2)
+                
+                # Informations principales
+                info_frame = ctk.CTkFrame(exp_card, fg_color="transparent")
+                info_frame.pack(fill="x", padx=15, pady=(0, 10))
+                
+                info_text = f"👤 Client: {expedition['client']} | 🚚 Transporteur: {expedition['carrier']} | ⚖️ Poids: {expedition['totalWeight']} kg"
+                ctk.CTkLabel(info_frame, text=info_text, font=ctk.CTkFont(size=14), text_color="#6b7280").pack(anchor="w")
+                
+                # Boutons d'action
+                actions_frame = ctk.CTkFrame(exp_card, fg_color="transparent")
+                actions_frame.pack(fill="x", padx=15, pady=(0, 15))
+                
+                ctk.CTkButton(actions_frame, text="👁️ Voir détails", width=100, height=30, fg_color="#3b82f6", hover_color="#2563eb", command=lambda e=expedition: show_expedition_details(e)).pack(side="left", padx=(0, 10))
+                ctk.CTkButton(actions_frame, text="📋 Timeline", width=100, height=30, fg_color="#10b981", hover_color="#059669", command=lambda e=expedition: show_timeline(e)).pack(side="left", padx=(0, 10))
+                ctk.CTkButton(actions_frame, text="✏️ Modifier", width=100, height=30, fg_color="#f59e0b", hover_color="#d97706", command=lambda e=expedition: edit_from_tracking(e)).pack(side="left")
+        
+        def show_expedition_details(expedition):
+            """Afficher les détails complets d'une expédition"""
+            # Créer une nouvelle fenêtre pour les détails
+            details_modal = ctk.CTkToplevel(modal)
+            details_modal.title(f"Détails - {expedition['number']}")
+            details_modal.geometry("800x600")
+            details_modal.configure(fg_color='white')
+            details_modal.grab_set()
             
             # Titre
-            ctk.CTkLabel(details_frame, text=f"📦 {expedition['number']}", font=ctk.CTkFont(size=20, weight="bold"), text_color="#1f2937").pack(anchor="w", padx=20, pady=(20, 15))
+            ctk.CTkLabel(details_modal, text=f"📦 {expedition['number']}", font=ctk.CTkFont(size=24, weight="bold"), text_color="#1f2937").pack(pady=(20, 30))
             
-            # Informations
-            info_frame = ctk.CTkFrame(details_frame, fg_color="transparent")
-            info_frame.pack(fill="x", padx=20, pady=(0, 20))
+            # Frame principal avec scroll
+            main_frame = ctk.CTkScrollableFrame(details_modal, fg_color="transparent")
+            main_frame.pack(fill="both", expand=True, padx=20, pady=(0, 20))
+            
+            # Informations détaillées
+            details_frame = ctk.CTkFrame(main_frame, fg_color="white", border_width=1, border_color="#e5e7eb", corner_radius=8)
+            details_frame.pack(fill="x", pady=(0, 20))
+            
+            ctk.CTkLabel(details_frame, text="📋 Informations détaillées", font=ctk.CTkFont(size=18, weight="bold"), text_color="#374151").pack(anchor="w", padx=20, pady=(20, 15))
+            
+            # Grille d'informations
+            info_grid = ctk.CTkFrame(details_frame, fg_color="transparent")
+            info_grid.pack(fill="x", padx=20, pady=(0, 20))
             
             info_data = [
                 ("Client:", expedition['client']),
@@ -1244,48 +1434,106 @@ class GestionExpeditionsApp(ctk.CTkFrame):
                 ("Priorité:", expedition['priority'].title()),
                 ("Statut:", expedition['status'].title()),
                 ("Poids:", f"{expedition['totalWeight']} kg"),
-                ("Colis:", str(expedition['packages'])),
+                ("Nombre de colis:", str(expedition['packages'])),
+                ("Date d'expédition:", expedition.get('shippingDate', 'Non spécifiée')),
+                ("Date de livraison prévue:", expedition.get('deliveryDate', 'Non spécifiée')),
+                ("Numéro de suivi:", expedition.get('trackingNumber', 'Non spécifié')),
+                ("Observation:", expedition.get('observation', 'Aucune')),
             ]
             
             for i, (label, value) in enumerate(info_data):
                 row = i // 2
                 col = i % 2
                 
-                ctk.CTkLabel(info_frame, text=label, font=ctk.CTkFont(size=14, weight="bold"), text_color="#374151").grid(row=row*2, column=col, sticky="w", padx=(0, 10), pady=(10, 5))
-                ctk.CTkLabel(info_frame, text=value, font=ctk.CTkFont(size=14), text_color="#6b7280").grid(row=row*2+1, column=col, sticky="w", padx=(0, 20), pady=(0, 10))
+                ctk.CTkLabel(info_grid, text=label, font=ctk.CTkFont(size=14, weight="bold"), text_color="#374151").grid(row=row*2, column=col, sticky="w", padx=(0, 10), pady=(10, 5))
+                ctk.CTkLabel(info_grid, text=value, font=ctk.CTkFont(size=14), text_color="#6b7280").grid(row=row*2+1, column=col, sticky="w", padx=(0, 20), pady=(0, 10))
             
             # Timeline de suivi
-            timeline_frame = ctk.CTkFrame(details_frame, fg_color="#f9fafb", corner_radius=8)
-            timeline_frame.pack(fill="x", padx=20, pady=(0, 20))
+            timeline_frame = ctk.CTkFrame(main_frame, fg_color="#f9fafb", border_width=1, border_color="#e5e7eb", corner_radius=8)
+            timeline_frame.pack(fill="x", pady=(0, 20))
             
-            ctk.CTkLabel(timeline_frame, text="📋 Timeline de suivi", font=ctk.CTkFont(size=16, weight="bold"), text_color="#374151").pack(anchor="w", padx=15, pady=(15, 10))
+            ctk.CTkLabel(timeline_frame, text="📅 Timeline de suivi", font=ctk.CTkFont(size=18, weight="bold"), text_color="#374151").pack(anchor="w", padx=20, pady=(20, 15))
             
-            timeline_events = [
-                {"date": "2024-03-15 08:30", "event": "Expédition créée", "status": "✅"},
-                {"date": "2024-03-15 10:15", "event": "En préparation", "status": "✅"},
-                {"date": "2024-03-15 14:20", "event": "Expédiée", "status": "✅"},
-                {"date": "2024-03-16 09:00", "event": "En transit", "status": "🔄"},
-                {"date": "2024-03-17 11:30", "event": "Livraison prévue", "status": "⏳"},
-            ]
+            # Timeline dynamique basée sur le statut
+            timeline_events = self._generate_timeline(expedition)
             
             for event in timeline_events:
                 event_frame = ctk.CTkFrame(timeline_frame, fg_color="transparent")
-                event_frame.pack(fill="x", padx=15, pady=5)
+                event_frame.pack(fill="x", padx=20, pady=5)
                 
-                ctk.CTkLabel(event_frame, text=event["status"], font=ctk.CTkFont(size=16)).pack(side="left")
-                ctk.CTkLabel(event_frame, text=event["event"], font=ctk.CTkFont(size=14), text_color="#374151").pack(side="left", padx=(10, 0))
-                ctk.CTkLabel(event_frame, text=event["date"], font=ctk.CTkFont(size=12), text_color="#6b7280").pack(side="right")
+                # Icône de statut
+                ctk.CTkLabel(event_frame, text=event["icon"], font=ctk.CTkFont(size=16)).pack(side="left")
+                
+                # Informations de l'événement
+                event_info_frame = ctk.CTkFrame(event_frame, fg_color="transparent")
+                event_info_frame.pack(side="left", fill="x", expand=True, padx=(10, 0))
+                
+                ctk.CTkLabel(event_info_frame, text=event["event"], font=ctk.CTkFont(size=14, weight="bold"), text_color="#374151").pack(anchor="w")
+                ctk.CTkLabel(event_info_frame, text=event["description"], font=ctk.CTkFont(size=12), text_color="#6b7280").pack(anchor="w")
+                
+                # Date
+                ctk.CTkLabel(event_frame, text=event["date"], font=ctk.CTkFont(size=12), text_color="#9ca3af").pack(side="right")
+            
+            # Bouton de fermeture
+            ctk.CTkButton(details_modal, text="Fermer", width=120, height=40, command=details_modal.destroy).pack(pady=20)
         
-        def show_not_found():
-            """Afficher message si expédition non trouvée"""
-            for widget in results_frame.winfo_children():
-                widget.destroy()
+        def show_timeline(expedition):
+            """Afficher uniquement la timeline d'une expédition"""
+            timeline_modal = ctk.CTkToplevel(modal)
+            timeline_modal.title(f"Timeline - {expedition['number']}")
+            timeline_modal.geometry("600x500")
+            timeline_modal.configure(fg_color='white')
+            timeline_modal.grab_set()
             
-            not_found_frame = ctk.CTkFrame(results_frame, fg_color="white", border_width=1, border_color="#e5e7eb", corner_radius=8)
-            not_found_frame.pack(fill="both", expand=True)
+            # Titre
+            ctk.CTkLabel(timeline_modal, text=f"📅 Timeline - {expedition['number']}", font=ctk.CTkFont(size=20, weight="bold"), text_color="#1f2937").pack(pady=(20, 30))
             
-            ctk.CTkLabel(not_found_frame, text="❌ Expédition non trouvée", font=ctk.CTkFont(size=18, weight="bold"), text_color="#ef4444").pack(expand=True)
-            ctk.CTkLabel(not_found_frame, text="Vérifiez le numéro d'expédition et réessayez", font=ctk.CTkFont(size=14), text_color="#6b7280").pack()
+            # Frame principal
+            main_frame = ctk.CTkScrollableFrame(timeline_modal, fg_color="transparent")
+            main_frame.pack(fill="both", expand=True, padx=20, pady=(0, 20))
+            
+            # Timeline
+            timeline_events = self._generate_timeline(expedition)
+            
+            for event in timeline_events:
+                event_frame = ctk.CTkFrame(main_frame, fg_color="white", border_width=1, border_color="#e5e7eb", corner_radius=8)
+                event_frame.pack(fill="x", pady=(0, 10))
+                
+                # En-tête de l'événement
+                header_frame = ctk.CTkFrame(event_frame, fg_color="transparent")
+                header_frame.pack(fill="x", padx=15, pady=(15, 10))
+                
+                ctk.CTkLabel(header_frame, text=event["icon"], font=ctk.CTkFont(size=18)).pack(side="left")
+                ctk.CTkLabel(header_frame, text=event["event"], font=ctk.CTkFont(size=16, weight="bold"), text_color="#374151").pack(side="left", padx=(10, 0))
+                ctk.CTkLabel(header_frame, text=event["date"], font=ctk.CTkFont(size=12), text_color="#9ca3af").pack(side="right")
+                
+                # Description
+                ctk.CTkLabel(event_frame, text=event["description"], font=ctk.CTkFont(size=14), text_color="#6b7280").pack(anchor="w", padx=15, pady=(0, 15))
+            
+            # Bouton de fermeture
+            ctk.CTkButton(timeline_modal, text="Fermer", width=120, height=40, command=timeline_modal.destroy).pack(pady=20)
+        
+        def edit_from_tracking(expedition):
+            """Modifier une expédition depuis le suivi"""
+            modal.destroy()  # Fermer la modal de suivi
+            self.edit_expedition(expedition)  # Ouvrir la modal d'édition
+        
+        def show_no_results():
+            """Afficher message si aucun résultat"""
+            no_results_frame = ctk.CTkFrame(results_frame, fg_color="white", border_width=1, border_color="#e5e7eb", corner_radius=8)
+            no_results_frame.pack(fill="both", expand=True)
+            
+            ctk.CTkLabel(no_results_frame, text="🔍 Aucune expédition trouvée", font=ctk.CTkFont(size=18, weight="bold"), text_color="#6b7280").pack(expand=True, pady=(50, 10))
+            ctk.CTkLabel(no_results_frame, text="Essayez avec d'autres critères de recherche", font=ctk.CTkFont(size=14), text_color="#9ca3af").pack()
+        
+        def refresh_tracking():
+            """Actualiser les données de suivi"""
+            print("🔄 Actualisation du suivi...")
+            self.load_expeditions_data()
+            perform_search()
+        
+        # Recherche initiale pour afficher toutes les expéditions
+        perform_search()
         
         # Bouton de fermeture
         ctk.CTkButton(modal, text="Fermer", width=120, height=40, command=modal.destroy).pack(pady=20)
@@ -1297,7 +1545,7 @@ class GestionExpeditionsApp(ctk.CTkFrame):
         # Créer une fenêtre modale pour l'export
         modal = ctk.CTkToplevel(self)
         modal.title("Export des Expéditions")
-        modal.geometry("600x500")
+        modal.geometry("700x600")
         modal.configure(fg_color='white')
         modal.grab_set()
         modal.resizable(False, False)
@@ -1354,21 +1602,55 @@ class GestionExpeditionsApp(ctk.CTkFrame):
         summary_text = f"• Format: {format_var.get()}\n• Période: {date_range_var.get()}\n• Statut: {status_var.get()}\n• Nombre d'expéditions: {len(self.expeditions_data)}"
         ctk.CTkLabel(summary_frame, text=summary_text, font=ctk.CTkFont(size=14), text_color="#0c4a6e", justify="left").pack(anchor="w", padx=15, pady=(0, 15))
         
+        # Zone de statut
+        status_display_frame = ctk.CTkFrame(main_frame, fg_color="white", border_width=1, border_color="#e5e7eb", corner_radius=8)
+        status_display_frame.pack(fill="x", pady=(0, 20))
+        
+        status_label = ctk.CTkLabel(status_display_frame, text="⏳ Prêt à exporter...", font=ctk.CTkFont(size=14), text_color="#6b7280")
+        status_label.pack(pady=15)
+        
         # Boutons d'action
         buttons_frame = ctk.CTkFrame(modal, fg_color="transparent")
         buttons_frame.pack(pady=(0, 20))
         
         def perform_export():
-            """Effectuer l'export"""
-            # Simuler l'export
-            print(f"Export en cours: Format={format_var.get()}, Période={date_range_var.get()}, Statut={status_var.get()}")
-            
-            # Afficher un message de succès
-            success_label = ctk.CTkLabel(modal, text="✅ Export terminé avec succès !", text_color="#10b981", font=ctk.CTkFont(size=16, weight="bold"))
-            success_label.pack(pady=10)
-            
-            # Fermer la modal après 2 secondes
-            modal.after(2000, modal.destroy)
+            """Effectuer l'export réel"""
+            try:
+                # Mettre à jour le statut
+                status_label.configure(text="🔄 Export en cours...", text_color="#f59e0b")
+                modal.update()
+                
+                # Filtrer les données selon les critères
+                filtered_data = self._filter_export_data(date_range_var.get(), status_var.get())
+                
+                # Générer le fichier selon le format
+                export_format = format_var.get().lower()
+                file_path = self._generate_export_file(filtered_data, export_format)
+                
+                if file_path:
+                    # Afficher le succès
+                    status_label.configure(text=f"✅ Export terminé !\n📁 Fichier: {file_path}", text_color="#10b981")
+                    
+                    # Bouton pour ouvrir le dossier
+                    open_folder_btn = ctk.CTkButton(
+                        status_display_frame, 
+                        text="📂 Ouvrir le dossier", 
+                        width=150, 
+                        height=35, 
+                        fg_color="#3b82f6", 
+                        hover_color="#2563eb",
+                        command=lambda: self._open_export_folder(file_path)
+                    )
+                    open_folder_btn.pack(pady=(10, 0))
+                    
+                    # Fermer la modal après 5 secondes
+                    modal.after(5000, modal.destroy)
+                else:
+                    status_label.configure(text="❌ Erreur lors de l'export", text_color="#ef4444")
+                    
+            except Exception as e:
+                print(f"❌ Erreur export: {e}")
+                status_label.configure(text=f"❌ Erreur: {str(e)}", text_color="#ef4444")
         
         def cancel_export():
             """Annuler l'export"""
@@ -1403,6 +1685,287 @@ class GestionExpeditionsApp(ctk.CTkFrame):
         
         # Centrer les boutons dans le frame
         buttons_frame.pack_configure(anchor="center")
+
+    def _filter_export_data(self, date_range, status_filter):
+        """Filtrer les données d'export selon les critères"""
+        from datetime import datetime, timedelta
+        
+        filtered_data = []
+        today = datetime.now().date()
+        
+        for exp in self.expeditions_data:
+            # Filtre par période
+            if date_range != "Toutes":
+                delivery_date = exp.get('deliveryDate')
+                if delivery_date:
+                    try:
+                        delivery_date_obj = datetime.strptime(delivery_date, '%Y-%m-%d').date()
+                        
+                        if date_range == "Aujourd'hui" and delivery_date_obj != today:
+                            continue
+                        elif date_range == "Cette semaine":
+                            week_start = today - timedelta(days=today.weekday())
+                            week_end = week_start + timedelta(days=6)
+                            if not (week_start <= delivery_date_obj <= week_end):
+                                continue
+                        elif date_range == "Ce mois":
+                            if delivery_date_obj.month != today.month or delivery_date_obj.year != today.year:
+                                continue
+                    except:
+                        continue
+            
+            # Filtre par statut
+            if status_filter != "Tous":
+                delivery_date = exp.get('deliveryDate')
+                if delivery_date:
+                    try:
+                        delivery_date_obj = datetime.strptime(delivery_date, '%Y-%m-%d').date()
+                        
+                        if delivery_date_obj < today:
+                            current_status = "Livrées"
+                        elif delivery_date_obj == today:
+                            current_status = "Expédiées"
+                        else:
+                            current_status = "En préparation"
+                    except:
+                        current_status = "En préparation"
+                else:
+                    current_status = "En préparation"
+                
+                if current_status != status_filter:
+                    continue
+            
+            filtered_data.append(exp)
+        
+        return filtered_data
+
+    def _generate_export_file(self, data, format_type):
+        """Générer le fichier d'export selon le format"""
+        import os
+        from datetime import datetime
+        
+        # Créer le dossier exports s'il n'existe pas
+        export_dir = "exports"
+        if not os.path.exists(export_dir):
+            os.makedirs(export_dir)
+        
+        # Nom du fichier avec timestamp
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        
+        if format_type == "excel":
+            return self._export_to_excel(data, export_dir, timestamp)
+        elif format_type == "csv":
+            return self._export_to_csv(data, export_dir, timestamp)
+        elif format_type == "pdf":
+            return self._export_to_pdf(data, export_dir, timestamp)
+        else:
+            return None
+
+    def _export_to_excel(self, data, export_dir, timestamp):
+        """Exporter vers Excel"""
+        try:
+            import pandas as pd
+            from openpyxl import Workbook
+            from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+            from openpyxl.utils.dataframe import dataframe_to_rows
+            
+            # Préparer les données
+            export_data = []
+            for exp in data:
+                export_data.append({
+                    'Numéro': exp.get('number', ''),
+                    'Client': exp.get('client', ''),
+                    'Date d\'expédition': exp.get('shippingDate', ''),
+                    'Date de livraison': exp.get('deliveryDate', ''),
+                    'Transporteur': exp.get('carrier', ''),
+                    'Priorité': exp.get('priority', ''),
+                    'Statut': exp.get('status', ''),
+                    'Poids (kg)': exp.get('totalWeight', 0),
+                    'Nombre de colis': exp.get('packages', 1),
+                    'Numéro de suivi': exp.get('trackingNumber', ''),
+                    'Observation': exp.get('observation', '')
+                })
+            
+            # Créer le DataFrame
+            df = pd.DataFrame(export_data)
+            
+            # Nom du fichier
+            filename = f"expeditions_{timestamp}.xlsx"
+            filepath = os.path.join(export_dir, filename)
+            
+            # Créer le workbook
+            wb = Workbook()
+            ws = wb.active
+            ws.title = "Expéditions"
+            
+            # Ajouter les données
+            for r in dataframe_to_rows(df, index=False, header=True):
+                ws.append(r)
+            
+            # Styliser l'en-tête
+            header_font = Font(bold=True, color="FFFFFF")
+            header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+            header_alignment = Alignment(horizontal="center", vertical="center")
+            
+            for cell in ws[1]:
+                cell.font = header_font
+                cell.fill = header_fill
+                cell.alignment = header_alignment
+            
+            # Ajuster la largeur des colonnes
+            for column in ws.columns:
+                max_length = 0
+                column_letter = column[0].column_letter
+                for cell in column:
+                    try:
+                        if len(str(cell.value)) > max_length:
+                            max_length = len(str(cell.value))
+                    except:
+                        pass
+                adjusted_width = min(max_length + 2, 50)
+                ws.column_dimensions[column_letter].width = adjusted_width
+            
+            # Sauvegarder
+            wb.save(filepath)
+            print(f"✅ Export Excel créé: {filepath}")
+            return filepath
+            
+        except Exception as e:
+            print(f"❌ Erreur export Excel: {e}")
+            return None
+
+    def _export_to_csv(self, data, export_dir, timestamp):
+        """Exporter vers CSV"""
+        try:
+            import pandas as pd
+            
+            # Préparer les données
+            export_data = []
+            for exp in data:
+                export_data.append({
+                    'Numéro': exp.get('number', ''),
+                    'Client': exp.get('client', ''),
+                    'Date d\'expédition': exp.get('shippingDate', ''),
+                    'Date de livraison': exp.get('deliveryDate', ''),
+                    'Transporteur': exp.get('carrier', ''),
+                    'Priorité': exp.get('priority', ''),
+                    'Statut': exp.get('status', ''),
+                    'Poids (kg)': exp.get('totalWeight', 0),
+                    'Nombre de colis': exp.get('packages', 1),
+                    'Numéro de suivi': exp.get('trackingNumber', ''),
+                    'Observation': exp.get('observation', '')
+                })
+            
+            # Créer le DataFrame
+            df = pd.DataFrame(export_data)
+            
+            # Nom du fichier
+            filename = f"expeditions_{timestamp}.csv"
+            filepath = os.path.join(export_dir, filename)
+            
+            # Sauvegarder
+            df.to_csv(filepath, index=False, encoding='utf-8-sig')
+            print(f"✅ Export CSV créé: {filepath}")
+            return filepath
+            
+        except Exception as e:
+            print(f"❌ Erreur export CSV: {e}")
+            return None
+
+    def _export_to_pdf(self, data, export_dir, timestamp):
+        """Exporter vers PDF"""
+        try:
+            from reportlab.lib.pagesizes import letter, A4
+            from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+            from reportlab.lib.units import inch
+            from reportlab.lib import colors
+            
+            # Nom du fichier
+            filename = f"expeditions_{timestamp}.pdf"
+            filepath = os.path.join(export_dir, filename)
+            
+            # Créer le document
+            doc = SimpleDocTemplate(filepath, pagesize=A4)
+            story = []
+            
+            # Styles
+            styles = getSampleStyleSheet()
+            title_style = ParagraphStyle(
+                'CustomTitle',
+                parent=styles['Heading1'],
+                fontSize=16,
+                spaceAfter=30,
+                alignment=1  # Centré
+            )
+            
+            # Titre
+            title = Paragraph("Rapport des Expéditions", title_style)
+            story.append(title)
+            story.append(Spacer(1, 20))
+            
+            # En-têtes
+            headers = ['Numéro', 'Client', 'Date Livraison', 'Transporteur', 'Priorité', 'Statut', 'Poids']
+            
+            # Données
+            table_data = [headers]
+            for exp in data:
+                row = [
+                    exp.get('number', ''),
+                    exp.get('client', ''),
+                    exp.get('deliveryDate', ''),
+                    exp.get('carrier', ''),
+                    exp.get('priority', ''),
+                    exp.get('status', ''),
+                    f"{exp.get('totalWeight', 0)} kg"
+                ]
+                table_data.append(row)
+            
+            # Créer la table
+            table = Table(table_data)
+            table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 10),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+                ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                ('FONTSIZE', (0, 1), (-1, -1), 8),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ]))
+            
+            story.append(table)
+            
+            # Construire le PDF
+            doc.build(story)
+            print(f"✅ Export PDF créé: {filepath}")
+            return filepath
+            
+        except Exception as e:
+            print(f"❌ Erreur export PDF: {e}")
+            return None
+
+    def _open_export_folder(self, file_path):
+        """Ouvrir le dossier contenant le fichier exporté"""
+        try:
+            import os
+            import subprocess
+            import platform
+            
+            folder_path = os.path.dirname(os.path.abspath(file_path))
+            
+            if platform.system() == "Windows":
+                subprocess.run(["explorer", folder_path])
+            elif platform.system() == "Darwin":  # macOS
+                subprocess.run(["open", folder_path])
+            else:  # Linux
+                subprocess.run(["xdg-open", folder_path])
+                
+        except Exception as e:
+            print(f"❌ Erreur ouverture dossier: {e}")
 
     def apply_theme(self, theme):
         """Appliquer le thème à la page"""
@@ -1490,25 +2053,243 @@ class GestionExpeditionsApp(ctk.CTkFrame):
 
     def _update_local_expedition(self, expedition_id, expedition_data):
         """Met à jour une expédition en mode local (démonstration)"""
+        print(f"🔄 Mise à jour locale de l'expédition ID: {expedition_id}")
+        
         for i, exp in enumerate(self.expeditions_data):
             if exp['id'] == expedition_id:
+                # Convertir le poids en float
+                poids = 0.0
+                try:
+                    poids = float(expedition_data.get('poids', 0))
+                except (ValueError, TypeError):
+                    poids = 0.0
+                
                 self.expeditions_data[i].update({
                     'client': expedition_data['client'],
                     'carrier': expedition_data['transporteurs'],
+                    'priority': expedition_data.get('priorite', 'moyenne'),
                     'observation': expedition_data['observation'],
-                    'trackingNumber': expedition_data['reference_commande']
+                    'trackingNumber': expedition_data['reference_commande'],
+                    'totalWeight': poids
                 })
+                print(f"✅ Expédition {expedition_id} mise à jour avec le poids: {poids} kg")
                 break
         
-        # Mettre à jour l'affichage
+        # Mettre à jour l'affichage principal
         self.update_expeditions_display()
+        
+        # Mettre à jour les blocs centraux (notifications, planning, etc.)
+        self.update_central_blocks()
+        
+        # Mettre à jour les statistiques
+        self.update_stats_display()
 
     def _delete_local_expedition(self, expedition_id):
         """Supprime une expédition en mode local (démonstration)"""
+        print(f"🗑️ Suppression locale de l'expédition ID: {expedition_id}")
+        
+        # Supprimer de la liste principale
         self.expeditions_data = [exp for exp in self.expeditions_data if exp['id'] != expedition_id]
         
-        # Mettre à jour l'affichage
+        # Mettre à jour l'affichage principal
         self.update_expeditions_display()
+        
+        # Mettre à jour les blocs centraux (notifications, planning, etc.)
+        self.update_central_blocks()
+        
+        # Mettre à jour les statistiques
+        self.update_stats_display()
+        
+        print(f"✅ Expédition {expedition_id} supprimée de toutes les parties de l'interface")
+
+    def _search_expeditions_db(self, search_term, status_filter, carrier_filter):
+        """Rechercher des expéditions dans la base de données avec filtres"""
+        try:
+            conn = psycopg2.connect(**PG_CONN)
+            cursor = conn.cursor()
+            
+            # Requête corrigée - pas de colonne statut dans bon_expeditions
+            query = """
+                SELECT be.reference_commande, be.client, be.date_livraison, 
+                       be.transporteurs, be.priorite, be.observation, be.liste_articles_livres,
+                       c.poids, c.dimension
+                FROM sge_cre.bon_expeditions be
+                LEFT JOIN sge_cre.colis c ON be.id_colis = c.id_colis
+                WHERE 1=1
+            """
+            params = []
+            
+            # Filtre par terme de recherche (client ou référence)
+            if search_term:
+                query += " AND (be.client ILIKE %s OR be.reference_commande ILIKE %s)"
+                params.extend([f"%{search_term}%", f"%{search_term}%"])
+            
+            # Filtre par transporteur
+            if carrier_filter and carrier_filter != "Tous":
+                query += " AND be.transporteurs = %s"
+                params.append(carrier_filter)
+            
+            cursor.execute(query, params)
+            results = cursor.fetchall()
+            
+            # Convertir en format standard
+            expeditions = []
+            for row in results:
+                # Déterminer le statut basé sur la date de livraison
+                delivery_date = row[2]
+                today = datetime.now().date()
+                
+                if delivery_date:
+                    if delivery_date < today:
+                        status = "delivered"
+                    elif delivery_date == today:
+                        status = "in-transit"
+                    else:
+                        status = "preparing"
+                else:
+                    status = "preparing"
+                
+                expeditions.append({
+                    'number': row[0],  # reference_commande
+                    'client': row[1] or "Client non spécifié",
+                    'deliveryDate': row[2].strftime('%Y-%m-%d') if row[2] else None,
+                    'carrier': row[3] or "Non spécifié",
+                    'priority': row[4] or "moyenne",
+                    'observation': row[5] or "",
+                    'articles': row[6] or "",
+                    'status': status,
+                    'totalWeight': float(row[7]) if row[7] else 0.0,
+                    'packages': 1,
+                    'trackingNumber': row[0],
+                    'shippingDate': datetime.now().strftime('%Y-%m-%d')
+                })
+            
+            cursor.close()
+            conn.close()
+            
+            return expeditions
+            
+        except Exception as e:
+            print(f"❌ Erreur recherche BD: {e}")
+            return []
+    
+    def _search_expeditions_local(self, search_term, status_filter, carrier_filter):
+        """Rechercher des expéditions en mode local avec filtres"""
+        filtered_expeditions = []
+        
+        for exp in self.expeditions_data:
+            # Filtre par terme de recherche (numéro ou client)
+            if search_term:
+                search_upper = search_term.upper()
+                if (search_upper not in exp['number'].upper() and 
+                    search_upper not in exp['client'].upper()):
+                    continue
+            
+            # Filtre par statut (déterminé par la date de livraison)
+            if status_filter and status_filter != "Tous":
+                delivery_date = exp.get('deliveryDate')
+                if delivery_date:
+                    try:
+                        delivery_date_obj = datetime.strptime(delivery_date, '%Y-%m-%d').date()
+                        today = datetime.now().date()
+                        
+                        if delivery_date_obj < today:
+                            current_status = "delivered"
+                        elif delivery_date_obj == today:
+                            current_status = "in-transit"
+                        else:
+                            current_status = "preparing"
+                    except:
+                        current_status = "preparing"
+                else:
+                    current_status = "preparing"
+                
+                status_mapping = {
+                    "En préparation": "preparing",
+                    "Expédiée": "shipped",
+                    "En transit": "in-transit",
+                    "Livrée": "delivered"
+                }
+                if status_filter in status_mapping and current_status != status_mapping[status_filter]:
+                    continue
+            
+            # Filtre par transporteur
+            if carrier_filter and carrier_filter != "Tous" and exp['carrier'] != carrier_filter:
+                continue
+            
+            filtered_expeditions.append(exp)
+        
+        return filtered_expeditions
+    
+    def _get_status_color(self, status):
+        """Obtenir la couleur du badge de statut"""
+        status_colors = {
+            'preparing': '#f59e0b',      # Orange
+            'shipped': '#3b82f6',        # Bleu
+            'in-transit': '#8b5cf6',     # Violet
+            'delivered': '#10b981',      # Vert
+            'cancelled': '#ef4444'       # Rouge
+        }
+        return status_colors.get(status, '#6b7280')  # Gris par défaut
+    
+    def _generate_timeline(self, expedition):
+        """Générer une timeline dynamique basée sur le statut de l'expédition"""
+        timeline = []
+        
+        # Date de création (toujours présente)
+        creation_date = expedition.get('shippingDate', datetime.now().strftime('%Y-%m-%d'))
+        timeline.append({
+            "icon": "✅",
+            "event": "Expédition créée",
+            "description": f"L'expédition {expedition['number']} a été créée dans le système",
+            "date": f"{creation_date} 08:30"
+        })
+        
+        # Événements basés sur le statut
+        status = expedition.get('status', 'preparing')
+        
+        if status in ['preparing', 'shipped', 'in-transit', 'delivered']:
+            timeline.append({
+                "icon": "📦",
+                "event": "En préparation",
+                "description": "Les articles sont préparés et emballés",
+                "date": f"{creation_date} 10:15"
+            })
+        
+        if status in ['shipped', 'in-transit', 'delivered']:
+            timeline.append({
+                "icon": "🚚",
+                "event": "Expédiée",
+                "description": f"L'expédition a été confiée à {expedition['carrier']}",
+                "date": f"{creation_date} 14:20"
+            })
+        
+        if status in ['in-transit', 'delivered']:
+            timeline.append({
+                "icon": "🔄",
+                "event": "En transit",
+                "description": "L'expédition est en cours de livraison",
+                "date": f"{datetime.now().strftime('%Y-%m-%d')} 09:00"
+            })
+        
+        if status == 'delivered':
+            timeline.append({
+                "icon": "🎉",
+                "event": "Livrée",
+                "description": "L'expédition a été livrée avec succès",
+                "date": f"{datetime.now().strftime('%Y-%m-%d')} 11:30"
+            })
+        else:
+            # Livraison prévue
+            delivery_date = expedition.get('deliveryDate', creation_date)
+            timeline.append({
+                "icon": "⏳",
+                "event": "Livraison prévue",
+                "description": f"Livraison prévue le {delivery_date}",
+                "date": f"{delivery_date} 11:30"
+            })
+        
+        return timeline
 
 
 if __name__ == "__main__":

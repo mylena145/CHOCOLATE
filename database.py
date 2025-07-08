@@ -459,7 +459,8 @@ def get_all_expeditions():
                 be.transporteurs,
                 c.poids,
                 c.dimension,
-                COALESCE(c.id_colis, 0) as id_colis
+                COALESCE(c.id_colis, 0) as id_colis,
+                be.priorite
             FROM sge_cre.bon_expeditions be
             LEFT JOIN sge_cre.colis c ON be.id_colis = c.id_colis
             ORDER BY be.date_livraison DESC
@@ -485,14 +486,16 @@ def get_all_expeditions():
             else:
                 status = "preparing"
             
-            # Déterminer la priorité basée sur la date
-            days_diff = (delivery_date - today).days
-            if days_diff <= 1:
-                priority = "haute"
-            elif days_diff <= 3:
-                priority = "moyenne"
-            else:
-                priority = "basse"
+            # Utiliser la priorité de la base de données, avec fallback basé sur la date
+            priority = exp[10] if exp[10] else "moyenne"
+            if not priority or priority not in ['haute', 'moyenne', 'basse']:
+                days_diff = (delivery_date - today).days
+                if days_diff <= 1:
+                    priority = "haute"
+                elif days_diff <= 3:
+                    priority = "moyenne"
+                else:
+                    priority = "basse"
             
             expeditions_list.append({
                 'id': exp[0],
@@ -522,25 +525,57 @@ def add_expedition(expedition_data):
         conn = psycopg2.connect(**PG_CONN)
         cursor = conn.cursor()
         
+        # Générer un ID unique pour l'expédition
+        cursor.execute("SELECT COALESCE(MAX(id_bon_expedition), 0) + 1 FROM sge_cre.bon_expeditions")
+        next_id = cursor.fetchone()[0]
+        
+        # Créer d'abord un colis avec le poids
+        poids = expedition_data.get('poids', 0.0)
+        if isinstance(poids, str):
+            try:
+                poids = float(poids)
+            except ValueError:
+                poids = 0.0
+        
+        print(f"🔄 Création du colis avec le poids: {poids} kg")
+        
+        cursor.execute("""
+            INSERT INTO sge_cre.colis 
+            (dimension, poids, emplacement)
+            VALUES (%s, %s, %s)
+            RETURNING id_colis
+        """, (
+            1.0,  # dimension par défaut
+            poids,
+            "Zone A"  # emplacement par défaut
+        ))
+        
+        colis_id = cursor.fetchone()[0]
+        print(f"✅ Colis créé avec l'ID: {colis_id} et le poids: {poids} kg")
+        
+        # Créer l'expédition avec le colis
         cursor.execute("""
             INSERT INTO sge_cre.bon_expeditions 
-            (client, reference_commande, date_livraison, observation, liste_articles_livres, transporteurs)
-            VALUES (%s, %s, %s, %s, %s, %s)
+            (id_bon_expedition, id_colis, client, reference_commande, date_livraison, observation, liste_articles_livres, transporteurs, priorite)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id_bon_expedition
         """, (
+            next_id,
+            colis_id,
             expedition_data.get('client'),
             expedition_data.get('reference_commande'),
             expedition_data.get('date_livraison'),
             expedition_data.get('observation', ''),
             expedition_data.get('liste_articles_livres', ''),
-            expedition_data.get('transporteurs')
+            expedition_data.get('transporteurs'),
+            expedition_data.get('priorite', 'moyenne')
         ))
         
         expedition_id = cursor.fetchone()[0]
         conn.commit()
         conn.close()
         
-        print(f"Expédition créée avec l'ID: {expedition_id}")
+        print(f"Expédition créée avec l'ID: {expedition_id} et colis ID: {colis_id}")
         return expedition_id
     except Exception as e:
         print(f"Erreur lors de la création de l'expédition: {e}")
@@ -552,10 +587,16 @@ def update_expedition(expedition_id, expedition_data):
         conn = psycopg2.connect(**PG_CONN)
         cursor = conn.cursor()
         
+        # Récupérer l'ID du colis associé
+        cursor.execute("SELECT id_colis FROM sge_cre.bon_expeditions WHERE id_bon_expedition = %s", (expedition_id,))
+        result = cursor.fetchone()
+        colis_id = result[0] if result else None
+        
+        # Mettre à jour l'expédition
         cursor.execute("""
             UPDATE sge_cre.bon_expeditions 
             SET client = %s, reference_commande = %s, date_livraison = %s, 
-                observation = %s, liste_articles_livres = %s, transporteurs = %s
+                observation = %s, liste_articles_livres = %s, transporteurs = %s, priorite = %s
             WHERE id_bon_expedition = %s
         """, (
             expedition_data.get('client'),
@@ -564,8 +605,30 @@ def update_expedition(expedition_id, expedition_data):
             expedition_data.get('observation', ''),
             expedition_data.get('liste_articles_livres', ''),
             expedition_data.get('transporteurs'),
+            expedition_data.get('priorite', 'moyenne'),
             expedition_id
         ))
+        
+        # Mettre à jour le poids dans le colis si un colis existe
+        if colis_id:
+            poids = expedition_data.get('poids', 0.0)
+            if isinstance(poids, str):
+                try:
+                    poids = float(poids)
+                except ValueError:
+                    poids = 0.0
+            
+            print(f"🔄 Mise à jour du poids: {poids} kg pour le colis {colis_id}")
+            
+            cursor.execute("""
+                UPDATE sge_cre.colis 
+                SET poids = %s
+                WHERE id_colis = %s
+            """, (poids, colis_id))
+            
+            print(f"✅ Poids mis à jour avec succès: {poids} kg")
+        else:
+            print("⚠️ Aucun colis associé à cette expédition")
         
         conn.commit()
         conn.close()
