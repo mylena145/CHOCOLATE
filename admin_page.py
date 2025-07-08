@@ -133,22 +133,166 @@ class AdminFrame(ctk.CTkFrame):
         self.time_label.configure(text=txt)
         self.after(1000, self._update_time)
 
+    def _get_real_time_stats(self):
+        """Récupère les statistiques en temps réel depuis la base de données"""
+        try:
+            import psycopg2
+            conn = psycopg2.connect(**PG_CONN)
+            cursor = conn.cursor()
+            
+            # Compter les utilisateurs actifs
+            cursor.execute("SELECT COUNT(*) FROM sge_cre.individus WHERE actif = true")
+            users_actifs = cursor.fetchone()[0]
+            
+            # Compter les administrateurs
+            cursor.execute("SELECT COUNT(*) FROM sge_cre.individus WHERE role LIKE '%informatique%' AND actif = true")
+            admins = cursor.fetchone()[0]
+            
+            # Compter les responsables
+            cursor.execute("SELECT COUNT(*) FROM sge_cre.individus WHERE role LIKE '%Responsable%' AND actif = true")
+            responsables = cursor.fetchone()[0]
+            
+            # Compter les utilisateurs limités (magasiniers, emballeurs, livreurs, etc.)
+            cursor.execute("""
+                SELECT COUNT(*) FROM sge_cre.individus 
+                WHERE role IN ('Magasinier', 'Emballeur', 'Livreur', 'Agent de logistique', 'Garde de sécurité') 
+                AND actif = true
+            """)
+            users_limites = cursor.fetchone()[0]
+            
+            # Calculer les nouveaux utilisateurs ce mois
+            cursor.execute("""
+                SELECT COUNT(*) FROM sge_cre.individus 
+                WHERE actif = true 
+                AND date_creation >= CURRENT_DATE - INTERVAL '30 days'
+            """)
+            nouveaux_mois = cursor.fetchone()[0]
+            
+            conn.close()
+            
+            return {
+                'users_actifs': users_actifs,
+                'admins': admins,
+                'responsables': responsables,
+                'users_limites': users_limites,
+                'nouveaux_mois': nouveaux_mois
+            }
+        except Exception as e:
+            print(f"Erreur lors de la récupération des statistiques: {e}")
+            # Retourner des valeurs par défaut en cas d'erreur
+            return {
+                'users_actifs': 0,
+                'admins': 0,
+                'responsables': 0,
+                'users_limites': 0,
+                'nouveaux_mois': 0
+            }
+
     def _build_stats_cards(self):
         stats_frame = ctk.CTkFrame(self.main_content, fg_color="#f7fafd")
         stats_frame.pack(fill="x", pady=(10, 8), padx=24)
+        
+        # Récupérer les données en temps réel
+        stats = self._get_real_time_stats()
+        
         cards_data = [
-            ("Utilisateurs Actifs", "8", "#10b981", "✅", "+2 ce mois", "#10b981"),
-            ("Super Administrateurs", "2", "#DC2626", "🛡️", "Accès complet", "#DC2626"),
-            ("Gestionnaires", "3", "#2563EB", "👔", "Accès étendu", "#2563EB"),
-            ("Opérateurs", "3", "#D97706", "👷", "Accès limité", "#D97706")
+            ("Utilisateurs Actifs", str(stats['users_actifs']), "#10b981", "✅", f"+{stats['nouveaux_mois']} ce mois", "#10b981"),
+            ("Administrateurs", str(stats['admins']), "#DC2626", "🛡️", "Accès complet", "#DC2626"),
+            ("Responsables", str(stats['responsables']), "#2563EB", "👔", "Accès étendu", "#2563EB"),
+            ("Utilisateurs Limités", str(stats['users_limites']), "#D97706", "👷", "Accès limité", "#D97706")
         ]
+        
+        # Stocker les références des cartes pour pouvoir les mettre à jour
+        self.stats_cards = {}
+        
         for i, (title, value, color, icon, sub, subcolor) in enumerate(cards_data):
             card = ctk.CTkFrame(stats_frame, fg_color="white", corner_radius=16, border_width=1, border_color="#e0e0e0", width=220, height=110)
             card.grid(row=0, column=i, padx=10, sticky="nsew")
-            ctk.CTkLabel(card, text=icon, font=ctk.CTkFont(size=28), text_color=color).place(x=12, y=10)
-            ctk.CTkLabel(card, text=title, font=ctk.CTkFont(size=13), text_color="#666").place(x=54, y=12)
-            ctk.CTkLabel(card, text=value, font=ctk.CTkFont(size=28, weight="bold"), text_color="#222").place(x=54, y=36)
-            ctk.CTkLabel(card, text=sub, font=ctk.CTkFont(size=12), text_color=subcolor).place(x=54, y=72)
+            
+            # Créer les labels avec des références pour pouvoir les mettre à jour
+            icon_label = ctk.CTkLabel(card, text=icon, font=ctk.CTkFont(size=28), text_color=color)
+            icon_label.place(x=12, y=10)
+            
+            title_label = ctk.CTkLabel(card, text=title, font=ctk.CTkFont(size=13), text_color="#666")
+            title_label.place(x=54, y=12)
+            
+            value_label = ctk.CTkLabel(card, text=value, font=ctk.CTkFont(size=28, weight="bold"), text_color="#222")
+            value_label.place(x=54, y=36)
+            
+            sub_label = ctk.CTkLabel(card, text=sub, font=ctk.CTkFont(size=12), text_color=subcolor)
+            sub_label.place(x=54, y=72)
+            
+            # Stocker les références pour mise à jour
+            self.stats_cards[title] = {
+                'value_label': value_label,
+                'sub_label': sub_label
+            }
+        
+        # Programmer la mise à jour automatique toutes les 30 secondes
+        self._schedule_stats_update()
+
+    def _schedule_stats_update(self):
+        """Programme la mise à jour automatique des statistiques"""
+        def update_stats():
+            try:
+                stats = self._get_real_time_stats()
+                
+                # Mettre à jour les cartes
+                if hasattr(self, 'stats_cards'):
+                    # Utilisateurs Actifs
+                    if 'Utilisateurs Actifs' in self.stats_cards:
+                        self.stats_cards['Utilisateurs Actifs']['value_label'].configure(text=str(stats['users_actifs']))
+                        self.stats_cards['Utilisateurs Actifs']['sub_label'].configure(text=f"+{stats['nouveaux_mois']} ce mois")
+                    
+                    # Administrateurs
+                    if 'Administrateurs' in self.stats_cards:
+                        self.stats_cards['Administrateurs']['value_label'].configure(text=str(stats['admins']))
+                    
+                    # Responsables
+                    if 'Responsables' in self.stats_cards:
+                        self.stats_cards['Responsables']['value_label'].configure(text=str(stats['responsables']))
+                    
+                    # Utilisateurs Limités
+                    if 'Utilisateurs Limités' in self.stats_cards:
+                        self.stats_cards['Utilisateurs Limités']['value_label'].configure(text=str(stats['users_limites']))
+                
+                # Programmer la prochaine mise à jour
+                self.after(30000, update_stats)  # 30 secondes
+                
+            except Exception as e:
+                print(f"Erreur lors de la mise à jour des statistiques: {e}")
+                # Réessayer dans 30 secondes même en cas d'erreur
+                self.after(30000, update_stats)
+        
+        # Démarrer la première mise à jour
+        self.after(30000, update_stats)
+
+    def _update_stats_immediately(self):
+        """Met à jour immédiatement les statistiques"""
+        try:
+            stats = self._get_real_time_stats()
+            
+            # Mettre à jour les cartes
+            if hasattr(self, 'stats_cards'):
+                # Utilisateurs Actifs
+                if 'Utilisateurs Actifs' in self.stats_cards:
+                    self.stats_cards['Utilisateurs Actifs']['value_label'].configure(text=str(stats['users_actifs']))
+                    self.stats_cards['Utilisateurs Actifs']['sub_label'].configure(text=f"+{stats['nouveaux_mois']} ce mois")
+                
+                # Administrateurs
+                if 'Administrateurs' in self.stats_cards:
+                    self.stats_cards['Administrateurs']['value_label'].configure(text=str(stats['admins']))
+                
+                # Responsables
+                if 'Responsables' in self.stats_cards:
+                    self.stats_cards['Responsables']['value_label'].configure(text=str(stats['responsables']))
+                
+                # Utilisateurs Limités
+                if 'Utilisateurs Limités' in self.stats_cards:
+                    self.stats_cards['Utilisateurs Limités']['value_label'].configure(text=str(stats['users_limites']))
+                    
+        except Exception as e:
+            print(f"Erreur lors de la mise à jour immédiate des statistiques: {e}")
 
     def _build_tabs(self):
         tab_frame = ctk.CTkFrame(self.main_content, fg_color="white")
@@ -157,6 +301,7 @@ class AdminFrame(ctk.CTkFrame):
         tab_labels = [
             ("Utilisateurs", "👥"),
             ("Rôles & Permissions", "🔖"),
+            ("Matricules", "🆔"),
             ("Paramètres Système", "⚙️"),
             ("Journal d'Activité", "📝"),
             ("CLI", "💻")
@@ -173,6 +318,7 @@ class AdminFrame(ctk.CTkFrame):
             self.tab_contents[tab] = frame
         self._build_users_tab(self.tab_contents["Utilisateurs"])
         self._build_roles_tab(self.tab_contents["Rôles & Permissions"])
+        self._build_matricules_tab(self.tab_contents["Matricules"])
         self._build_settings_tab(self.tab_contents["Paramètres Système"])
         self._build_audit_tab(self.tab_contents["Journal d'Activité"])
         self._build_cli_tab(self.tab_contents["CLI"])
@@ -194,6 +340,9 @@ class AdminFrame(ctk.CTkFrame):
         top = ctk.CTkFrame(parent, fg_color="white")
         top.pack(fill="x", pady=(10, 0))
         ctk.CTkLabel(top, text="Liste des Utilisateurs", font=ctk.CTkFont(size=16, weight="bold"), text_color="#222").pack(side="left", padx=8)
+        # Bouton moderne d'ajout d'utilisateur
+        add_btn = ctk.CTkButton(top, text="➕ Nouvel utilisateur", fg_color="#3b82f6", hover_color="#2563eb", text_color="#fff", corner_radius=8, font=ctk.CTkFont(size=14, weight="bold"), height=38, command=self._open_user_modal)
+        add_btn.pack(side="right", padx=(8, 0))
         search = ctk.CTkEntry(top, placeholder_text="Rechercher un utilisateur...", width=260)
         search.pack(side="right", padx=8)
         search.bind('<KeyRelease>', lambda e: self._refresh_users(table, search.get()))
@@ -246,41 +395,132 @@ class AdminFrame(ctk.CTkFrame):
         uid, nom, prenom, email, role, matricule, actif, last_login = user
         modal = ctk.CTkToplevel(self)
         modal.title("Éditer l'utilisateur")
-        modal.geometry("440x520")
+        modal.geometry("500x650")
         modal.grab_set()
         modal.resizable(False, False)
-        ctk.CTkLabel(modal, text="✏️ Modifier un utilisateur", font=ctk.CTkFont(size=20, weight="bold"), text_color="#2563eb").pack(pady=(22,8))
-        form = ctk.CTkFrame(modal, fg_color="white", corner_radius=16)
+        modal.configure(fg_color="#f0f6ff")  # Fond doux bleu clair
+
+        # Barre de titre colorée avec icône
+        title_bar = ctk.CTkFrame(modal, fg_color="#2563eb", corner_radius=18)
+        title_bar.pack(fill="x", pady=(0, 0))
+        ctk.CTkLabel(
+            title_bar, text="✏️ Modifier un utilisateur",
+            font=ctk.CTkFont(size=23, weight="bold"),
+            text_color="#fff"
+        ).pack(pady=18)
+
+        # Illustration ou icône décorative
+        ctk.CTkLabel(
+            modal, text="📝", font=ctk.CTkFont(size=48), text_color="#2563eb"
+        ).pack(pady=(10, 0))
+
+        form = ctk.CTkScrollableFrame(modal, fg_color="#f7fafd", corner_radius=22, width=460, height=470)
         form.pack(fill="both", expand=True, padx=22, pady=8)
         entries = {}
-        for label, val in [("Nom", nom), ("Prénom", prenom), ("Email", email), ("Rôle", role), ("Matricule", matricule)]:
-            ctk.CTkLabel(form, text=label, font=ctk.CTkFont(size=14), text_color="#222").pack(anchor="w", pady=(10,0))
-            if label == "Rôle":
-                e = ctk.CTkComboBox(form, values=[
-                    "Super Administrateur", "Administrateur", "Gestionnaire Entrepôt", 
-                    "Responsable Réception", "Opérateur Stock", "Expéditeur", 
-                    "Consultant", "Stagiaire"
-                ])
+        errors = {}
+        champs = [
+            ("Nom *", nom),
+            ("Prénom *", prenom),
+            ("Email *", email),
+            ("Rôle *", role),
+            ("Matricule *", matricule),
+            ("Adresse *", ""),
+            ("Téléphone", "")
+        ]
+        role_values = [
+            "Responsable des stocks",
+            "Magasinier",
+            "Emballeur",
+            "Responsable de la logistique",
+            "Agent de logistique",
+            "Livreur",
+            "Responsable informatique",
+            "Technicien informatique",
+            "Responsable de la sécurité physique",
+            "Garde de sécurité"
+        ]
+        for label, val in champs:
+            row = ctk.CTkFrame(form, fg_color="transparent")
+            row.pack(fill="x", pady=(14,0))
+            # Astérisque rouge pour les champs obligatoires
+            if "*" in label:
+                label_widget = ctk.CTkLabel(row, text=label, font=ctk.CTkFont(size=16, weight="bold"), text_color="#374151")
+                label_widget.pack(side="left", padx=(0,2))
+                ctk.CTkLabel(row, text="*", font=ctk.CTkFont(size=16, weight="bold"), text_color="#ef4444").pack(side="left")
+            else:
+                ctk.CTkLabel(row, text=label, font=ctk.CTkFont(size=16, weight="bold"), text_color="#374151").pack(side="left", padx=(0,10))
+            if label == "Rôle *":
+                e = ctk.CTkComboBox(row, values=role_values, width=270, font=ctk.CTkFont(size=15))
                 e.set(val)
             else:
-                e = ctk.CTkEntry(form, height=36, font=ctk.CTkFont(size=13))
+                e = ctk.CTkEntry(row, height=40, font=ctk.CTkFont(size=15))
                 e.insert(0, val)
-            e.pack(fill="x", pady=2)
+            e.pack(side="right", fill="x", expand=True)
             entries[label] = e
-        # Champ date avec calendrier
-        ctk.CTkLabel(form, text="Dernière connexion", font=ctk.CTkFont(size=14), text_color="#222").pack(anchor="w", pady=(10,0))
-        date_var = tk.StringVar(value=last_login)
-        date_entry = DateEntry(form, locale='fr_FR', date_pattern='dd/MM/yyyy', textvariable=date_var, width=18, background='#3b82f6', foreground='white', borderwidth=2)
-        date_entry.pack(fill="x", pady=2)
-        btns = ctk.CTkFrame(form, fg_color="white")
-        btns.pack(fill="x", pady=22)
-        ctk.CTkButton(btns, text="Annuler", fg_color="#f7fafd", text_color="#222", corner_radius=8, height=38, command=modal.destroy).pack(side="left", padx=8)
+            err = ctk.CTkLabel(form, text="", text_color="#ef4444", font=ctk.CTkFont(size=12))
+            err.pack(anchor="w", padx=10)
+            errors[label] = err
+        # Gestion dynamique des erreurs : efface l'erreur dès que l'utilisateur modifie le champ
+        def clear_error(event, label):
+            errors[label].configure(text="")
+            entries[label].configure(border_color="#D1D5DB")
+        for label in entries:
+            entries[label].bind('<Key>', lambda e, l=label: clear_error(e, l))
+            if label == "Rôle *":
+                entries[label].bind("<<ComboboxSelected>>", lambda e, l=label: clear_error(e, l))
+        btns = ctk.CTkFrame(modal, fg_color="transparent")
+        btns.pack(fill="x", pady=18, padx=20)
+        ctk.CTkButton(
+            btns, text="❌ Annuler", fg_color="#f87171", hover_color="#ef4444", text_color="#fff",
+            corner_radius=10, height=44, font=ctk.CTkFont(size=16, weight="bold"),
+            command=modal.destroy
+        ).pack(side="left", padx=12, expand=True, fill="x")
         def save():
-            update_user(uid, entries["Nom"].get(), entries["Prénom"].get(), entries["Email"].get(), entries["Rôle"].get(), entries["Matricule"].get())
-            # Ici tu pourrais aussi sauvegarder la date si tu l'ajoutes en base
-            modal.destroy()
-            self._refresh_users(table, search_term)
-        ctk.CTkButton(btns, text="💾 Enregistrer", fg_color="#3b82f6", text_color="#fff", corner_radius=8, height=38, command=save).pack(side="right", padx=8)
+            nom = entries["Nom *"].get()
+            prenom = entries["Prénom *"].get()
+            email = entries["Email *"].get()
+            role = entries["Rôle *"].get()
+            matricule = entries["Matricule *"].get()
+            valid = True
+            for err in errors.values(): err.configure(text="")
+            for field, entry in entries.items(): entry.configure(border_color="#D1D5DB")
+            # Validation des champs obligatoires
+            if not nom:
+                errors["Nom *"].configure(text="Champ obligatoire")
+                entries["Nom *"].configure(border_color="#ef4444")
+                valid = False
+            if not prenom:
+                errors["Prénom *"].configure(text="Champ obligatoire")
+                entries["Prénom *"].configure(border_color="#ef4444")
+                valid = False
+            if not email or "@" not in email:
+                errors["Email *"].configure(text="Email invalide")
+                entries["Email *"].configure(border_color="#ef4444")
+                valid = False
+            if not matricule:
+                errors["Matricule *"].configure(text="Champ obligatoire")
+                entries["Matricule *"].configure(border_color="#ef4444")
+                valid = False
+            if not role:
+                errors["Rôle *"].configure(text="Champ obligatoire")
+                entries["Rôle *"].configure(border_color="#ef4444")
+                valid = False
+            if not valid:
+                return
+            # Mise à jour utilisateur en base PostgreSQL
+            try:
+                from database import update_user
+                update_user(uid, nom, prenom, email, role, "", "", matricule)
+                modal.destroy()
+                self._refresh_users(table, search_term)
+            except Exception as e:
+                errors["Email *"].configure(text=f"Erreur : {e}")
+                entries["Email *"].configure(border_color="#ef4444")
+        ctk.CTkButton(
+            btns, text="✔ Valider", fg_color="#22c55e", hover_color="#16a34a", text_color="#fff",
+            corner_radius=10, height=44, font=ctk.CTkFont(size=16, weight="bold"),
+            command=save
+        ).pack(side="right", padx=12, expand=True, fill="x")
 
     def _reset_user_pw(self, user, table, search_term):
         uid = user[0]
@@ -421,6 +661,202 @@ class AdminFrame(ctk.CTkFrame):
                         CTkToolTip(lbl, message=tip)
         render_table()
         search_entry.bind('<KeyRelease>', lambda e: render_table())
+
+    def _build_matricules_tab(self, parent):
+        """Construit l'onglet de gestion des matricules"""
+        from matricule_manager import MatriculeManager
+        
+        # Titre et description
+        ctk.CTkLabel(parent, text="Gestion des Matricules", font=ctk.CTkFont(size=19, weight="bold"), text_color="#2563eb").pack(pady=(18, 2))
+        ctk.CTkLabel(parent, text="Système de génération automatique des matricules basé sur les rôles", font=ctk.CTkFont(size=13), text_color="#666").pack(pady=(0, 10))
+        
+        # Barre d'outils
+        topbar = ctk.CTkFrame(parent, fg_color="white")
+        topbar.pack(fill="x", padx=30, pady=(0, 8))
+        
+        # Bouton de rafraîchissement
+        refresh_btn = ctk.CTkButton(topbar, text="🔄 Rafraîchir", fg_color="#10b981", text_color="#fff", corner_radius=8, height=36, 
+                                   command=lambda: self._refresh_matricules_tab(parent))
+        refresh_btn.pack(side="right", padx=(8, 0))
+        
+        # Bouton de test
+        test_btn = ctk.CTkButton(topbar, text="🧪 Tester", fg_color="#f59e0b", text_color="#fff", corner_radius=8, height=36,
+                                command=self._test_matricule_generation)
+        test_btn.pack(side="right", padx=8)
+        
+        # Conteneur principal avec scroll
+        main_container = ctk.CTkScrollableFrame(parent, fg_color="white", corner_radius=14)
+        main_container.pack(fill="both", expand=True, padx=30, pady=10)
+        
+        # Section 1: Mapping des rôles vers préfixes
+        mapping_frame = ctk.CTkFrame(main_container, fg_color="#f7fafd", corner_radius=12)
+        mapping_frame.pack(fill="x", pady=(0, 20))
+        
+        ctk.CTkLabel(mapping_frame, text="📋 Mapping des Rôles vers Préfixes", 
+                    font=ctk.CTkFont(size=16, weight="bold"), text_color="#2563eb").pack(pady=(15, 10))
+        
+        # Grille des rôles et préfixes
+        roles_grid = ctk.CTkFrame(mapping_frame, fg_color="transparent")
+        roles_grid.pack(fill="x", padx=20, pady=(0, 15))
+        
+        # En-têtes
+        headers = ctk.CTkFrame(roles_grid, fg_color="transparent")
+        headers.pack(fill="x", pady=(0, 8))
+        ctk.CTkLabel(headers, text="Rôle", font=ctk.CTkFont(size=14, weight="bold"), text_color="#374151", width=200, anchor="w").pack(side="left")
+        ctk.CTkLabel(headers, text="Préfixe", font=ctk.CTkFont(size=14, weight="bold"), text_color="#374151", width=80, anchor="w").pack(side="left")
+        ctk.CTkLabel(headers, text="Exemple", font=ctk.CTkFont(size=14, weight="bold"), text_color="#374151", width=100, anchor="w").pack(side="left")
+        
+        # Afficher les rôles et leurs préfixes
+        for role_name, prefix in MatriculeManager.ROLE_PREFIXES.items():
+            if role_name == "default":
+                continue
+                
+            row = ctk.CTkFrame(roles_grid, fg_color="white", corner_radius=8)
+            row.pack(fill="x", pady=2)
+            
+            ctk.CTkLabel(row, text=role_name, font=ctk.CTkFont(size=13), text_color="#374151", width=200, anchor="w").pack(side="left", padx=10, pady=8)
+            
+            # Badge pour le préfixe
+            prefix_badge = ctk.CTkLabel(row, text=prefix, font=ctk.CTkFont(size=12, weight="bold"), 
+                                      text_color="#fff", fg_color="#3b82f6", corner_radius=6, width=60, anchor="center")
+            prefix_badge.pack(side="left", padx=10, pady=8)
+            
+            ctk.CTkLabel(row, text=f"{prefix}001", font=ctk.CTkFont(size=13), text_color="#6b7280", width=100, anchor="w").pack(side="left", padx=10, pady=8)
+        
+        # Section 2: Statistiques d'utilisation
+        stats_frame = ctk.CTkFrame(main_container, fg_color="#f7fafd", corner_radius=12)
+        stats_frame.pack(fill="x", pady=(0, 20))
+        
+        ctk.CTkLabel(stats_frame, text="📊 Statistiques d'Utilisation", 
+                    font=ctk.CTkFont(size=16, weight="bold"), text_color="#2563eb").pack(pady=(15, 10))
+        
+        # Récupérer les statistiques
+        stats = MatriculeManager.get_statistics()
+        
+        if stats:
+            stats_grid = ctk.CTkFrame(stats_frame, fg_color="transparent")
+            stats_grid.pack(fill="x", padx=20, pady=(0, 15))
+            
+            # En-têtes des statistiques
+            stats_headers = ctk.CTkFrame(stats_grid, fg_color="transparent")
+            stats_headers.pack(fill="x", pady=(0, 8))
+            ctk.CTkLabel(stats_headers, text="Rôle", font=ctk.CTkFont(size=14, weight="bold"), text_color="#374151", width=200, anchor="w").pack(side="left")
+            ctk.CTkLabel(stats_headers, text="Utilisateurs", font=ctk.CTkFont(size=14, weight="bold"), text_color="#374151", width=100, anchor="w").pack(side="left")
+            ctk.CTkLabel(stats_headers, text="Matricules", font=ctk.CTkFont(size=14, weight="bold"), text_color="#374151", width=200, anchor="w").pack(side="left")
+            
+            for role, count in stats.items():
+                row = ctk.CTkFrame(stats_grid, fg_color="white", corner_radius=8)
+                row.pack(fill="x", pady=2)
+                
+                ctk.CTkLabel(row, text=role, font=ctk.CTkFont(size=13), text_color="#374151", width=200, anchor="w").pack(side="left", padx=10, pady=8)
+                
+                # Badge pour le nombre d'utilisateurs
+                count_badge = ctk.CTkLabel(row, text=str(count), font=ctk.CTkFont(size=12, weight="bold"), 
+                                         text_color="#fff", fg_color="#10b981", corner_radius=6, width=80, anchor="center")
+                count_badge.pack(side="left", padx=10, pady=8)
+                
+                # Afficher les matricules existants
+                matricules = MatriculeManager.get_all_matricules_by_role(role)
+                matricules_text = ", ".join(matricules[:5])  # Limiter à 5 matricules
+                if len(matricules) > 5:
+                    matricules_text += f" ... (+{len(matricules)-5})"
+                
+                ctk.CTkLabel(row, text=matricules_text, font=ctk.CTkFont(size=12), text_color="#6b7280", width=200, anchor="w").pack(side="left", padx=10, pady=8)
+        else:
+            ctk.CTkLabel(stats_frame, text="Aucune donnée disponible", font=ctk.CTkFont(size=13), text_color="#6b7280").pack(pady=20)
+        
+        # Section 3: Outils de validation
+        tools_frame = ctk.CTkFrame(main_container, fg_color="#f7fafd", corner_radius=12)
+        tools_frame.pack(fill="x", pady=(0, 20))
+        
+        ctk.CTkLabel(tools_frame, text="🔧 Outils de Validation", 
+                    font=ctk.CTkFont(size=16, weight="bold"), text_color="#2563eb").pack(pady=(15, 10))
+        
+        # Zone de test de matricule
+        test_container = ctk.CTkFrame(tools_frame, fg_color="white", corner_radius=8)
+        test_container.pack(fill="x", padx=20, pady=(0, 15))
+        
+        ctk.CTkLabel(test_container, text="Tester un matricule:", font=ctk.CTkFont(size=14, weight="bold"), text_color="#374151").pack(anchor="w", padx=15, pady=(15, 5))
+        
+        test_input_frame = ctk.CTkFrame(test_container, fg_color="transparent")
+        test_input_frame.pack(fill="x", padx=15, pady=(0, 15))
+        
+        test_entry = ctk.CTkEntry(test_input_frame, placeholder_text="Entrez un matricule (ex: AD001)", height=36)
+        test_entry.pack(side="left", fill="x", expand=True, padx=(0, 10))
+        
+        test_result_label = ctk.CTkLabel(test_container, text="", font=ctk.CTkFont(size=12), text_color="#6b7280")
+        test_result_label.pack(anchor="w", padx=15, pady=(0, 15))
+        
+        def test_matricule():
+            matricule = test_entry.get().strip().upper()
+            if not matricule:
+                test_result_label.configure(text="Veuillez entrer un matricule", text_color="#ef4444")
+                return
+            
+            # Validation du format
+            is_valid, validation_msg = MatriculeManager.validate_matricule(matricule)
+            if not is_valid:
+                test_result_label.configure(text=f"❌ Format invalide: {validation_msg}", text_color="#ef4444")
+                return
+            
+            # Identification du rôle
+            role = MatriculeManager.get_role_from_matricule(matricule)
+            if role:
+                test_result_label.configure(text=f"✅ Matricule valide - Rôle: {role}", text_color="#10b981")
+            else:
+                test_result_label.configure(text="⚠️ Matricule valide mais rôle non reconnu", text_color="#f59e0b")
+        
+        test_btn = ctk.CTkButton(test_input_frame, text="Tester", fg_color="#3b82f6", text_color="#fff", corner_radius=8, height=36, command=test_matricule)
+        test_btn.pack(side="right")
+        
+        # Stocker les références pour le rafraîchissement
+        parent._test_entry = test_entry
+        parent._test_result_label = test_result_label
+
+    def _refresh_matricules_tab(self, parent):
+        """Rafraîchit l'onglet matricules"""
+        # Vider le contenu existant
+        for widget in parent.winfo_children():
+            widget.destroy()
+        
+        # Reconstruire l'onglet
+        self._build_matricules_tab(parent)
+
+    def _test_matricule_generation(self):
+        """Teste la génération de matricules pour différents rôles"""
+        from matricule_manager import MatriculeManager
+        
+        # Créer une fenêtre de test
+        test_window = ctk.CTkToplevel(self)
+        test_window.title("Test de Génération de Matricules")
+        test_window.geometry("500x400")
+        test_window.grab_set()
+        
+        ctk.CTkLabel(test_window, text="🧪 Test de Génération de Matricules", 
+                    font=ctk.CTkFont(size=18, weight="bold"), text_color="#2563eb").pack(pady=(20, 10))
+        
+        # Zone de résultats
+        results_frame = ctk.CTkScrollableFrame(test_window, fg_color="white", corner_radius=12)
+        results_frame.pack(fill="both", expand=True, padx=20, pady=10)
+        
+        # Tester différents rôles
+        test_roles = [
+            "Administrateur",
+            "Livreur", 
+            "Magasinier",
+            "Responsable des stocks",
+            "Technicien informatique"
+        ]
+        
+        for role in test_roles:
+            matricule = MatriculeManager.generate_matricule(role)
+            prefix = MatriculeManager.get_role_prefix(role)
+            
+            row = ctk.CTkFrame(results_frame, fg_color="#f7fafd", corner_radius=8)
+            row.pack(fill="x", pady=2, padx=5)
+            
+            ctk.CTkLabel(row, text=f"Rôle: {role}", font=ctk.CTkFont(size=13, weight="bold"), text_color="#374151").pack(anchor="w", padx=10, pady=5)
+            ctk.CTkLabel(row, text=f"Préfixe: {prefix} → Matricule: {matricule}", font=ctk.CTkFont(size=12), text_color="#6b7280").pack(anchor="w", padx=10, pady=(0, 5))
 
     def _build_settings_tab(self, parent):
         # Détecter le thème actuel
@@ -784,32 +1220,289 @@ class AdminFrame(ctk.CTkFrame):
         except Exception as e:
             print(f"Erreur lors de l'affichage de la notification: {e}")
 
+    def _get_audit_logs(self, filter_type="Tous", limit=50):
+        """Récupère les logs d'activité depuis la base de données"""
+        try:
+            import psycopg2
+            conn = psycopg2.connect(**PG_CONN)
+            cursor = conn.cursor()
+            
+            # Requête de base
+            base_query = """
+                SELECT 
+                    l.type_action,
+                    l.description,
+                    l.date_action,
+                    l.utilisateur,
+                    l.details
+                FROM sge_cre.logs_activite l
+                WHERE 1=1
+            """
+            
+            # Ajouter le filtre par type
+            if filter_type != "Tous":
+                if filter_type == "Connexion":
+                    base_query += " AND l.type_action IN ('Connexion', 'Déconnexion')"
+                elif filter_type == "Modification":
+                    base_query += " AND l.type_action IN ('Création', 'Modification', 'Mise à jour')"
+                elif filter_type == "Suppression":
+                    base_query += " AND l.type_action IN ('Suppression', 'Désactivation')"
+            
+            # Ajouter l'ordre et la limite
+            base_query += " ORDER BY l.date_action DESC LIMIT %s"
+            
+            cursor.execute(base_query, (limit,))
+            logs = cursor.fetchall()
+            
+            conn.close()
+            
+            # Formater les logs
+            formatted_logs = []
+            for log in logs:
+                type_action, description, date_action, utilisateur, details = log
+                
+                # Déterminer la couleur selon le type d'action
+                if type_action in ['Connexion', 'Déconnexion']:
+                    color = "#10b981"  # Vert
+                elif type_action in ['Création', 'Modification', 'Mise à jour']:
+                    color = "#f59e42"  # Orange
+                elif type_action in ['Suppression', 'Désactivation']:
+                    color = "#ef4444"  # Rouge
+                else:
+                    color = "#3b82f6"  # Bleu par défaut
+                
+                # Formater la date
+                try:
+                    if isinstance(date_action, str):
+                        dt = datetime.datetime.strptime(date_action, "%Y-%m-%d %H:%M:%S")
+                    else:
+                        dt = date_action
+                    
+                    if HAS_BABEL:
+                        date_formatted = format_datetime(dt, "d MMMM yyyy HH:mm", locale="fr_FR")
+                    else:
+                        date_formatted = dt.strftime("%d/%m/%Y %H:%M")
+                except:
+                    date_formatted = str(date_action)
+                
+                formatted_logs.append({
+                    'type': type_action,
+                    'message': description,
+                    'date': date_formatted,
+                    'color': color,
+                    'utilisateur': utilisateur,
+                    'details': details
+                })
+            
+            return formatted_logs
+            
+        except Exception as e:
+            print(f"Erreur lors de la récupération des logs: {e}")
+            # Retourner des logs par défaut en cas d'erreur
+            return [
+                {
+                    'type': 'Erreur',
+                    'message': 'Impossible de charger les logs depuis la base de données',
+                    'date': datetime.datetime.now().strftime("%d/%m/%Y %H:%M"),
+                    'color': '#ef4444',
+                    'utilisateur': 'Système',
+                    'details': str(e)
+                }
+            ]
+
     def _build_audit_tab(self, parent):
-        ctk.CTkLabel(parent, text="Journal d'Activité", font=ctk.CTkFont(size=19, weight="bold"), text_color="#2563eb").pack(pady=(18, 2))
-        ctk.CTkLabel(parent, text="Consultez l'historique des actions du système. Filtrez par type ou utilisateur.", font=ctk.CTkFont(size=13), text_color="#666").pack(pady=(0, 10))
-        # Filtres
-        filtres = ctk.CTkFrame(parent, fg_color="white")
-        filtres.pack(fill="x", padx=30, pady=(0, 8))
-        ctk.CTkLabel(filtres, text="Filtrer :", font=ctk.CTkFont(size=13), text_color="#222").pack(side="left", padx=(0, 8))
-        for txt, color in [("Tous", "#3b82f6"), ("Connexion", "#10b981"), ("Modification", "#f59e42"), ("Suppression", "#ef4444")]:
-            b = ctk.CTkButton(filtres, text=txt, fg_color=color, text_color="#fff", width=110, height=32, corner_radius=8)
-            b.pack(side="left", padx=4)
-        # Timeline moderne
-        timeline = [
-            ("Connexion", "Jean Dupont s'est connecté.", "15 mars 2024 09:24", "#10b981"),
-            ("Modification", "Marie Martin a modifié un stock.", "15 mars 2024 09:30", "#f59e42"),
-            ("Suppression", "Pierre Durand a supprimé un utilisateur.", "15 mars 2024 09:45", "#ef4444")
-        ]
-        for typ, msg, date, color in timeline:
-            row = ctk.CTkFrame(parent, fg_color="#fff", corner_radius=10)
-            row.pack(fill="x", padx=40, pady=6)
-            badge = ctk.CTkLabel(row, text=typ, font=ctk.CTkFont(size=12, weight="bold"), text_color="#fff", fg_color=color, corner_radius=8, width=100, anchor="center")
+        # Stocker la référence du parent pour les mises à jour
+        self.audit_parent = parent
+        
+        # Titre et description
+        ctk.CTkLabel(parent, text="📋 Journal d'Activité", font=ctk.CTkFont(size=19, weight="bold"), text_color="#2563eb").pack(pady=(18, 2))
+        ctk.CTkLabel(parent, text="Consultez l'historique des actions du système en temps réel. Filtrez par type ou utilisateur.", font=ctk.CTkFont(size=13), text_color="#666").pack(pady=(0, 10))
+        
+        # Conteneur pour les filtres
+        filtres_container = ctk.CTkFrame(parent, fg_color="white")
+        filtres_container.pack(fill="x", padx=30, pady=(0, 8))
+        
+        ctk.CTkLabel(filtres_container, text="🔍 Filtrer :", font=ctk.CTkFont(size=13, weight="bold"), text_color="#222").pack(side="left", padx=(15, 8))
+        
+        # Boutons de filtre avec stockage des références
+        self.filter_buttons = {}
+        filter_types = [("Tous", "#3b82f6"), ("Connexion", "#10b981"), ("Modification", "#f59e42"), ("Suppression", "#ef4444")]
+        
+        for txt, color in filter_types:
+            btn = ctk.CTkButton(
+                filtres_container, text=txt, fg_color=color, text_color="#fff", 
+                width=110, height=32, corner_radius=8,
+                command=lambda t=txt: self._filter_audit_logs(t)
+            )
+            btn.pack(side="left", padx=4)
+            self.filter_buttons[txt] = btn
+        
+        # Conteneur pour la timeline
+        self.timeline_container = ctk.CTkFrame(parent, fg_color="transparent")
+        self.timeline_container.pack(fill="both", expand=True, padx=30, pady=10)
+        
+        # Charger les logs initiaux
+        self._refresh_audit_logs("Tous")
+        
+        # Programmer la mise à jour automatique
+        self._schedule_audit_update()
+        
+        # Message d'information
+        info_label = ctk.CTkLabel(
+            parent, 
+            text="🔄 Mise à jour automatique toutes les 15 secondes • Pour plus de détails, exportez le journal ou contactez l'administrateur.", 
+            font=ctk.CTkFont(size=12, slant="italic"), 
+            text_color="#90A4AE"
+        )
+        info_label.pack(pady=(18, 0))
+
+    def _filter_audit_logs(self, filter_type):
+        """Filtre les logs d'activité selon le type sélectionné"""
+        # Mettre à jour l'apparence des boutons
+        for txt, btn in self.filter_buttons.items():
+            if txt == filter_type:
+                btn.configure(fg_color="#1e40af", text_color="white")
+            else:
+                # Restaurer la couleur originale
+                colors = {"Tous": "#3b82f6", "Connexion": "#10b981", "Modification": "#f59e42", "Suppression": "#ef4444"}
+                btn.configure(fg_color=colors.get(txt, "#3b82f6"), text_color="white")
+        
+        # Rafraîchir les logs avec le nouveau filtre
+        self._refresh_audit_logs(filter_type)
+
+    def _refresh_audit_logs(self, filter_type="Tous"):
+        """Rafraîchit l'affichage des logs d'activité"""
+        # Vider le conteneur de timeline
+        for widget in self.timeline_container.winfo_children():
+            widget.destroy()
+        
+        # Récupérer les logs depuis la base de données
+        logs = self._get_audit_logs(filter_type, limit=20)
+        
+        if not logs:
+            # Afficher un message si aucun log
+            no_logs_label = ctk.CTkLabel(
+                self.timeline_container, 
+                text="📭 Aucune activité récente trouvée", 
+                font=ctk.CTkFont(size=14), 
+                text_color="#666"
+            )
+            no_logs_label.pack(pady=50)
+            return
+        
+        # Créer la timeline avec les logs réels
+        for log in logs:
+            row = ctk.CTkFrame(self.timeline_container, fg_color="#fff", corner_radius=10, border_width=1, border_color="#e5e7eb")
+            row.pack(fill="x", pady=6)
+            
+            # Badge du type d'action
+            badge = ctk.CTkLabel(
+                row, text=log['type'], 
+                font=ctk.CTkFont(size=12, weight="bold"), 
+                text_color="#fff", fg_color=log['color'], 
+                corner_radius=8, width=100, anchor="center"
+            )
             badge.pack(side="left", padx=8, pady=8)
-            ctk.CTkLabel(row, text=msg, font=ctk.CTkFont(size=13), text_color="#222", width=340, anchor="w", wraplength=320, justify="left").pack(side="left", padx=2)
-            ctk.CTkLabel(row, text=date, font=ctk.CTkFont(size=12), text_color="#666", width=160, anchor="e").pack(side="left", padx=2)
-            if HAS_TOOLTIP:
-                CTkToolTip(badge, message=f"Type d'action : {typ}")
-        ctk.CTkLabel(parent, text="Pour plus de détails, exportez le journal ou contactez l'administrateur.", font=ctk.CTkFont(size=12, slant="italic"), text_color="#90A4AE").pack(pady=(18, 0))
+            
+            # Message principal
+            message_text = f"👤 {log['utilisateur']}: {log['message']}"
+            message_label = ctk.CTkLabel(
+                row, text=message_text, 
+                font=ctk.CTkFont(size=13), text_color="#222", 
+                width=340, anchor="w", wraplength=320, justify="left"
+            )
+            message_label.pack(side="left", padx=2)
+            
+            # Date
+            date_label = ctk.CTkLabel(
+                row, text=log['date'], 
+                font=ctk.CTkFont(size=12), text_color="#666", 
+                width=160, anchor="e"
+            )
+            date_label.pack(side="left", padx=2)
+            
+            # Tooltip avec détails si disponibles
+            if HAS_TOOLTIP and log.get('details'):
+                CTkToolTip(badge, message=f"Type: {log['type']}\nDétails: {log['details']}")
+            elif HAS_TOOLTIP:
+                CTkToolTip(badge, message=f"Type d'action: {log['type']}")
+
+    def _schedule_audit_update(self):
+        """Programme la mise à jour automatique du journal d'activité"""
+        def update_audit():
+            try:
+                # Déterminer le filtre actif
+                active_filter = "Tous"
+                for txt, btn in self.filter_buttons.items():
+                    if btn.cget("fg_color") == "#1e40af":
+                        active_filter = txt
+                        break
+                
+                # Rafraîchir les logs
+                self._refresh_audit_logs(active_filter)
+                
+                # Programmer la prochaine mise à jour
+                self.after(15000, update_audit)  # 15 secondes
+                
+            except Exception as e:
+                print(f"Erreur lors de la mise à jour du journal d'activité: {e}")
+                # Réessayer dans 15 secondes même en cas d'erreur
+                self.after(15000, update_audit)
+        
+        # Démarrer la première mise à jour
+        self.after(15000, update_audit)
+
+    def _log_activity(self, type_action, description, utilisateur, details=""):
+        """Enregistre une action dans le journal d'activité"""
+        try:
+            import psycopg2
+            conn = psycopg2.connect(**PG_CONN)
+            cursor = conn.cursor()
+            
+            # Insérer le log dans la base de données
+            cursor.execute("""
+                INSERT INTO sge_cre.logs_activite (type_action, description, date_action, utilisateur, details)
+                VALUES (%s, %s, NOW(), %s, %s)
+            """, (type_action, description, utilisateur, details))
+            
+            conn.commit()
+            conn.close()
+            
+            # Rafraîchir immédiatement le journal d'activité si l'onglet est ouvert
+            if hasattr(self, 'timeline_container'):
+                self._refresh_audit_logs("Tous")
+                
+        except Exception as e:
+            print(f"Erreur lors de l'enregistrement du log d'activité: {e}")
+            # En cas d'erreur, on peut créer la table si elle n'existe pas
+            self._create_audit_table()
+
+    def _create_audit_table(self):
+        """Crée la table de logs d'activité si elle n'existe pas"""
+        try:
+            import psycopg2
+            conn = psycopg2.connect(**PG_CONN)
+            cursor = conn.cursor()
+            
+            # Créer la table logs_activite
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS sge_cre.logs_activite (
+                    id SERIAL PRIMARY KEY,
+                    type_action VARCHAR(50) NOT NULL,
+                    description TEXT NOT NULL,
+                    date_action TIMESTAMP DEFAULT NOW(),
+                    utilisateur VARCHAR(100) NOT NULL,
+                    details TEXT,
+                    created_at TIMESTAMP DEFAULT NOW()
+                )
+            """)
+            
+            conn.commit()
+            conn.close()
+            print("Table logs_activite créée avec succès")
+            
+        except Exception as e:
+            print(f"Erreur lors de la création de la table logs_activite: {e}")
 
     def _build_cli_tab(self, parent):
         ctk.CTkLabel(parent, text="Terminal CLI", font=ctk.CTkFont(size=19, weight="bold"), text_color="#00ff00").pack(pady=(18, 2))
@@ -881,88 +1574,317 @@ class AdminFrame(ctk.CTkFrame):
                     font=ctk.CTkFont(size=10, slant="italic"), text_color="#888888").pack(pady=(5, 0))
 
     def _open_user_modal(self):
+        import threading
         modal = ctk.CTkToplevel(self)
         modal.title("Ajouter un Utilisateur")
-        modal.geometry("440x540")
+        modal.geometry("500x700")  # Augmenté la hauteur pour accommoder les boutons
         modal.grab_set()
         modal.resizable(False, False)
-        ctk.CTkLabel(modal, text="👤 Ajouter un Utilisateur", font=ctk.CTkFont(size=20, weight="bold"), text_color="#2563eb").pack(pady=(22,8))
-        form = ctk.CTkFrame(modal, fg_color="white", corner_radius=16)
-        form.pack(fill="both", expand=True, padx=22, pady=8)
+        modal.configure(fg_color="#f0f6ff")  # Fond doux bleu clair
+
+        # Barre de titre colorée avec icône
+        title_bar = ctk.CTkFrame(modal, fg_color="#2563eb", corner_radius=18)
+        title_bar.pack(fill="x", pady=(0, 0))
+        ctk.CTkLabel(
+            title_bar, text="👤 Ajouter un Utilisateur",
+            font=ctk.CTkFont(size=23, weight="bold"),
+            text_color="#fff"
+        ).pack(pady=18)
+
+        # Illustration ou icône décorative
+        ctk.CTkLabel(
+            modal, text="📝", font=ctk.CTkFont(size=48), text_color="#2563eb"
+        ).pack(pady=(10, 0))
+
+        scroll = ctk.CTkScrollableFrame(modal, fg_color="#f7fafd", corner_radius=22, width=460, height=420)  # Réduit la hauteur
+        scroll.pack(fill="both", expand=True, padx=20, pady=8)
         entries = {}
-        for label, val in [("Nom complet *", ""), ("Email *", ""), ("Rôle *", "combo"), ("Mot de passe *", "password"), ("Confirmation *", "password")]:
-            ctk.CTkLabel(form, text=label, font=ctk.CTkFont(size=14), text_color="#222").pack(anchor="w", pady=(10,0))
-            if val == "combo":
-                e = ctk.CTkComboBox(form, values=[
-                    "Super Administrateur", "Administrateur", "Gestionnaire Entrepôt", 
-                    "Responsable Réception", "Opérateur Stock", "Expéditeur", 
-                    "Consultant", "Stagiaire"
-                ])
-            elif val == "password":
-                e = ctk.CTkEntry(form, height=36, font=ctk.CTkFont(size=13), show="*")
+        errors = {}
+        fields = [
+            ("Nom *", "user", ""),
+            ("Prénom *", "user", ""),
+            ("Email *", "mail", ""),
+            ("Matricule *", "id", ""),
+            ("Rôle *", "role", "combo"),
+            ("Mot de passe *", "lock", "password"),
+            ("Confirmation *", "lock", "password"),
+            ("Adresse *", "home", ""),
+            ("Téléphone", "phone", "")
+        ]
+        role_values = [
+            "Responsable des stocks",
+            "Magasinier",
+            "Emballeur",
+            "Responsable de la logistique",
+            "Agent de logistique",
+            "Livreur",
+            "Responsable informatique",
+            "Technicien informatique",
+            "Responsable de la sécurité physique",
+            "Garde de sécurité"
+        ]
+        for label, icon, val in fields:
+            row = ctk.CTkFrame(scroll, fg_color="transparent")
+            row.pack(fill="x", pady=(14,0))
+            # Astérisque rouge pour les champs obligatoires
+            if "*" in label:
+                label_widget = ctk.CTkLabel(row, text=label, font=ctk.CTkFont(size=16, weight="bold"), text_color="#374151")
+                label_widget.pack(side="left", padx=(0,2))
+                ctk.CTkLabel(row, text="*", font=ctk.CTkFont(size=16, weight="bold"), text_color="#ef4444").pack(side="left")
             else:
-                e = ctk.CTkEntry(form, height=36, font=ctk.CTkFont(size=13))
-            e.pack(fill="x", pady=2)
+                ctk.CTkLabel(row, text=label, font=ctk.CTkFont(size=16, weight="bold"), text_color="#374151").pack(side="left", padx=(0,10))
+            if val == "combo":
+                e = ctk.CTkComboBox(row, values=role_values, width=270, font=ctk.CTkFont(size=15))
+                e.set(role_values[0])
+            elif val == "password":
+                e = ctk.CTkEntry(row, height=40, font=ctk.CTkFont(size=15), show="*")
+            else:
+                e = ctk.CTkEntry(row, height=40, font=ctk.CTkFont(size=15))
+            e.pack(side="right", fill="x", expand=True)
             entries[label] = e
-        # Champ date avec calendrier
-        ctk.CTkLabel(form, text="Date d'ajout", font=ctk.CTkFont(size=14), text_color="#222").pack(anchor="w", pady=(10,0))
-        date_var = tk.StringVar()
-        if HAS_TKCALENDAR:
-            date_entry = DateEntry(form, locale='fr_FR', date_pattern='dd/MM/yyyy', textvariable=date_var, width=18, background='#3b82f6', foreground='white', borderwidth=2)
-            date_entry.pack(fill="x", pady=2)
-        else:
-            # Fallback si tkcalendar n'est pas disponible
-            date_entry = ctk.CTkEntry(form, height=36, font=ctk.CTkFont(size=13), placeholder_text="JJ/MM/AAAA")
-            date_entry.pack(fill="x", pady=2)
-        btns = ctk.CTkFrame(form, fg_color="white")
-        btns.pack(fill="x", pady=22)
-        ctk.CTkButton(btns, text="Annuler", fg_color="#f7fafd", text_color="#222", corner_radius=8, height=38, command=modal.destroy).pack(side="left", padx=8)
+            err = ctk.CTkLabel(scroll, text="", text_color="#ef4444", font=ctk.CTkFont(size=12))
+            err.pack(anchor="w", padx=10)
+            errors[label] = err
+        # Génération automatique du matricule avec le nouveau module
+        from matricule_manager import MatriculeManager
+        def on_role_change(event=None):
+            role = entries["Rôle *"].get()
+            if role:
+                auto_matricule = MatriculeManager.generate_matricule(role)
+                if not getattr(entries["Matricule *"], '_user_modified', False):
+                    entries["Matricule *"].delete(0, 'end')
+                    entries["Matricule *"].insert(0, auto_matricule)
+                prefix = MatriculeManager.get_role_prefix(role)
+                if hasattr(entries["Matricule *"], '_prefix_label'):
+                    entries["Matricule *"]._prefix_label.configure(text=f"Préfixe: {prefix}")
+                else:
+                    prefix_label = ctk.CTkLabel(scroll, text=f"Préfixe: {prefix}", font=ctk.CTkFont(size=12), text_color="#6b7280")
+                    prefix_label.pack(anchor="w", padx=10, pady=(0, 5))
+                    entries["Matricule *"]._prefix_label = prefix_label
+        entries["Rôle *"].bind("<<ComboboxSelected>>", on_role_change)
+        def on_matricule_edit(event=None):
+            entries["Matricule *"]._user_modified = True
+        entries["Matricule *"].bind('<Key>', on_matricule_edit)
+        on_role_change()
+        # Gestion dynamique des erreurs : efface l'erreur dès que l'utilisateur modifie le champ
+        def clear_error(event, label):
+            errors[label].configure(text="")
+            entries[label].configure(border_color="#D1D5DB")
+        for label in entries:
+            entries[label].bind('<Key>', lambda e, l=label: clear_error(e, l))
+            if label == "Rôle *":
+                entries[label].bind("<<ComboboxSelected>>", lambda e, l=label: clear_error(e, l))
         def save():
-            nom = entries["Nom complet *"].get()
+            nom = entries["Nom *"].get()
+            prenom = entries["Prénom *"].get()
             email = entries["Email *"].get()
+            matricule = entries["Matricule *"].get()
             role = entries["Rôle *"].get()
             mdp = entries["Mot de passe *"].get()
             conf = entries["Confirmation *"].get()
-            if not nom or not email or not role or not mdp or not conf:
-                mbox.showerror("Erreur", "Tous les champs sont obligatoires.")
-                return
+            adresse = entries["Adresse *"].get()
+            telephone = entries["Téléphone"].get()
+            valid = True
+            for err in errors.values(): err.configure(text="")
+            for field, entry in entries.items(): entry.configure(border_color="#D1D5DB")
+            # Validation des champs obligatoires
+            if not nom:
+                errors["Nom *"].configure(text="Champ obligatoire")
+                entries["Nom *"].configure(border_color="#ef4444")
+                valid = False
+            if not prenom:
+                errors["Prénom *"].configure(text="Champ obligatoire")
+                entries["Prénom *"].configure(border_color="#ef4444")
+                valid = False
+            if not email or "@" not in email:
+                errors["Email *"].configure(text="Email invalide")
+                entries["Email *"].configure(border_color="#ef4444")
+                valid = False
+            if not matricule:
+                errors["Matricule *"].configure(text="Champ obligatoire")
+                entries["Matricule *"].configure(border_color="#ef4444")
+                valid = False
+            if not mdp or not conf:
+                errors["Mot de passe *"].configure(text="Champ obligatoire")
+                errors["Confirmation *"].configure(text="Champ obligatoire")
+                entries["Mot de passe *"].configure(border_color="#ef4444")
+                entries["Confirmation *"].configure(border_color="#ef4444")
+                valid = False
             if mdp != conf:
-                mbox.showerror("Erreur", "Les mots de passe ne correspondent pas.")
+                errors["Confirmation *"].configure(text="Les mots de passe ne correspondent pas")
+                entries["Confirmation *"].configure(border_color="#ef4444")
+                valid = False
+            if not role:
+                errors["Rôle *"].configure(text="Champ obligatoire")
+                entries["Rôle *"].configure(border_color="#ef4444")
+                valid = False
+            if not adresse:
+                errors["Adresse *"].configure(text="Champ obligatoire")
+                entries["Adresse *"].configure(border_color="#ef4444")
+                valid = False
+            # Validation et unicité du matricule
+            if matricule:
+                is_valid, validation_msg = MatriculeManager.validate_matricule(matricule)
+                if not is_valid:
+                    errors["Matricule *"].configure(text=validation_msg)
+                    entries["Matricule *"].configure(border_color="#ef4444")
+                    valid = False
+                else:
+                    is_available, availability_msg = MatriculeManager.is_matricule_available(matricule)
+                    if not is_available:
+                        errors["Matricule *"].configure(text=availability_msg)
+                        entries["Matricule *"].configure(border_color="#ef4444")
+                        valid = False
+                    expected_role = MatriculeManager.get_role_from_matricule(matricule)
+                    if expected_role and expected_role != role:
+                        errors["Matricule *"].configure(text=f"Ce matricule correspond au rôle '{expected_role}'")
+                        entries["Matricule *"].configure(border_color="#ef4444")
+                        valid = False
+            if not valid:
                 return
             # Ajout utilisateur en base PostgreSQL
             try:
-                import psycopg2
+                import psycopg2, datetime
                 conn = psycopg2.connect(**PG_CONN)
                 cursor = conn.cursor()
-                
-                # Insérer dans la table individus
                 cursor.execute("""
                     INSERT INTO sge_cre.individus (nom, prenom, email, password, role, matricule, adresse, telephone)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 """, (
-                    nom.split()[-1],  # nom de famille
-                    " ".join(nom.split()[:-1]),  # prénom
+                    nom,
+                    prenom,
                     email,
                     mdp,  # mot de passe en clair (à hasher en production)
                     role,
-                    email.split('@')[0].upper(),  # matricule basé sur email
-                    "Adresse par défaut",  # adresse par défaut
-                    "Téléphone par défaut"  # téléphone par défaut
+                    matricule,
+                    adresse,
+                    telephone
                 ))
                 conn.commit()
                 conn.close()
                 
-                mbox.showinfo("Succès", "Utilisateur ajouté avec succès !")
-                modal.destroy()
+                # Popup de succès ultra-moderne et élégant
+                success_modal = ctk.CTkToplevel(modal)
+                success_modal.title("🎉 Succès")
+                success_modal.geometry("480x420")
+                success_modal.grab_set()
+                success_modal.resizable(False, False)
+                success_modal.configure(fg_color="#ffffff")
                 
-                # Rafraîchir la liste si on est sur l'onglet Utilisateurs
+                # Centrer la modale
+                success_modal.update_idletasks()
+                x = (success_modal.winfo_screenwidth() // 2) - (480 // 2)
+                y = (success_modal.winfo_screenheight() // 2) - (420 // 2)
+                success_modal.geometry(f"480x420+{x}+{y}")
+                
+                # Conteneur principal avec ombre et bordure
+                main_container = ctk.CTkFrame(success_modal, fg_color="#ffffff", corner_radius=24, border_width=3, border_color="#e5e7eb")
+                main_container.pack(fill="both", expand=True, padx=25, pady=25)
+                
+                # Animation de succès avec cercle et effet
+                success_circle = ctk.CTkFrame(main_container, fg_color="#dcfce7", corner_radius=60, width=120, height=120, border_width=3, border_color="#bbf7d0")
+                success_circle.pack(pady=(35, 25))
+                
+                # Icône de succès dans le cercle avec effet
+                ctk.CTkLabel(
+                    success_circle, text="🎉", font=ctk.CTkFont(size=52), text_color="#16a34a"
+                ).pack(expand=True)
+                
+                # Titre principal avec emoji
+                ctk.CTkLabel(
+                    main_container, text="🎊 Utilisateur Créé avec Succès !",
+                    font=ctk.CTkFont(size=26, weight="bold"), text_color="#1f2937"
+                ).pack(pady=(0, 18))
+                
+                # Message de confirmation amélioré
+                ctk.CTkLabel(
+                    main_container, text=f"✨ L'utilisateur {prenom} {nom} a été ajouté avec succès au système de gestion d'entrepôts.",
+                    font=ctk.CTkFont(size=15), text_color="#6b7280", wraplength=400
+                ).pack(pady=(0, 28))
+                
+                # Informations détaillées dans un cadre élégant
+                info_frame = ctk.CTkFrame(main_container, fg_color="#f8fafc", corner_radius=16, border_width=2, border_color="#e2e8f0")
+                info_frame.pack(fill="x", padx=25, pady=(0, 28))
+                
+                # Matricule avec style amélioré
+                matricule_container = ctk.CTkFrame(info_frame, fg_color="transparent")
+                matricule_container.pack(fill="x", padx=18, pady=(15, 8))
+                ctk.CTkLabel(
+                    matricule_container, text="🆔 Matricule", font=ctk.CTkFont(size=15, weight="bold"), text_color="#374151"
+                ).pack(side="left")
+                ctk.CTkLabel(
+                    matricule_container, text=matricule, font=ctk.CTkFont(size=20, weight="bold"), text_color="#059669"
+                ).pack(side="right")
+                
+                # Rôle avec style amélioré
+                role_container = ctk.CTkFrame(info_frame, fg_color="transparent")
+                role_container.pack(fill="x", padx=18, pady=(8, 15))
+                ctk.CTkLabel(
+                    role_container, text="👤 Rôle", font=ctk.CTkFont(size=15, weight="bold"), text_color="#374151"
+                ).pack(side="left")
+                ctk.CTkLabel(
+                    role_container, text=role, font=ctk.CTkFont(size=17), text_color="#6b7280"
+                ).pack(side="right")
+                
+                # Bouton OK ultra-moderne avec effet
+                ctk.CTkButton(
+                    main_container, text="🎯 Parfait ! Continuer", fg_color="#10b981", hover_color="#059669",
+                    text_color="white", corner_radius=16, height=52, font=ctk.CTkFont(size=17, weight="bold"),
+                    border_width=2, border_color="#34d399",
+                    command=lambda: [success_modal.destroy(), modal.destroy()]
+                ).pack(pady=(0, 25), padx=25, fill="x")
+                
+                # Fermer automatiquement après 5 secondes
+                success_modal.after(5000, lambda: [success_modal.destroy(), modal.destroy()])
+                
+                # Rafraîchir la liste des utilisateurs
                 if hasattr(self, 'tab_contents') and "Utilisateurs" in self.tab_contents:
                     for w in self.tab_contents["Utilisateurs"].winfo_children():
                         w.destroy()
                     self._build_users_tab(self.tab_contents["Utilisateurs"])
+                
+                # Mettre à jour immédiatement les statistiques
+                self._update_stats_immediately()
+                
+                # Enregistrer l'action dans le journal d'activité
+                self._log_activity("Création", f"Création de l'utilisateur {prenom} {nom}", f"{prenom} {nom}", f"Matricule: {matricule}, Rôle: {role}")
                     
             except Exception as e:
-                mbox.showerror("Erreur", f"Erreur lors de l'ajout : {e}")
+                errors["Email *"].configure(text=f"Erreur : {e}")
+                entries["Email *"].configure(border_color="#ef4444")
                 if 'conn' in locals():
                     conn.close()
-        ctk.CTkButton(btns, text="💾 Enregistrer", fg_color="#3b82f6", text_color="#fff", corner_radius=8, height=38, command=save).pack(side="right", padx=8) 
+        
+        # Zone des boutons en bas de la modale - Plus visible et moderne
+        buttons_frame = ctk.CTkFrame(modal, fg_color="#ffffff", corner_radius=15, border_width=1, border_color="#e5e7eb")
+        buttons_frame.pack(fill="x", pady=(15, 20), padx=20)
+        
+        # Titre de la section boutons avec icône
+        title_container = ctk.CTkFrame(buttons_frame, fg_color="transparent")
+        title_container.pack(fill="x", padx=20, pady=(15, 10))
+        
+        ctk.CTkLabel(
+            title_container, text="⚡", font=ctk.CTkFont(size=16), text_color="#f59e0b"
+        ).pack(side="left", padx=(0, 8))
+        
+        ctk.CTkLabel(
+            title_container, text="Ajouter ou Annuler", font=ctk.CTkFont(size=16, weight="bold"), text_color="#1f2937"
+        ).pack(side="left")
+        
+        # Conteneur pour les boutons
+        button_container = ctk.CTkFrame(buttons_frame, fg_color="transparent")
+        button_container.pack(fill="x", padx=20, pady=(0, 15))
+        
+        # Bouton Annuler (à gauche) - Plus visible
+        ctk.CTkButton(
+            button_container, text="❌ Annuler", fg_color="#fef2f2", hover_color="#fee2e2", 
+            text_color="#dc2626", corner_radius=12, height=50, font=ctk.CTkFont(size=16, weight="bold"),
+            border_width=2, border_color="#fecaca", command=modal.destroy
+        ).pack(side="left", padx=(0, 10), expand=True, fill="x")
+        
+        # Bouton Valider (à droite) - Plus visible
+        ctk.CTkButton(
+            button_container, text="✔ Valider & Créer", fg_color="#10b981", hover_color="#059669", 
+            text_color="white", corner_radius=12, height=50, font=ctk.CTkFont(size=16, weight="bold"),
+            command=save
+        ).pack(side="right", padx=(10, 0), expand=True, fill="x")
