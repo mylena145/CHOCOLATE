@@ -349,6 +349,10 @@ class AdminFrame(ctk.CTkFrame):
         # Tableau utilisateurs
         table = ctk.CTkFrame(parent, fg_color="white", border_width=1, border_color="#e0e0e0")
         table.pack(fill="both", expand=True, pady=(8, 0))
+        
+        # Stocker la référence de la table pour l'actualisation automatique
+        self.users_table = table
+        
         self._refresh_users(table, "")
         # Pagination fictive
         pag = ctk.CTkFrame(parent, fg_color="white")
@@ -665,6 +669,9 @@ class AdminFrame(ctk.CTkFrame):
     def _build_matricules_tab(self, parent):
         """Construit l'onglet de gestion des matricules"""
         from matricule_manager import MatriculeManager
+        
+        # Stocker la référence du parent pour les mises à jour
+        self.matricules_parent = parent
         
         # Titre et description
         ctk.CTkLabel(parent, text="Gestion des Matricules", font=ctk.CTkFont(size=19, weight="bold"), text_color="#2563eb").pack(pady=(18, 2))
@@ -1477,6 +1484,27 @@ class AdminFrame(ctk.CTkFrame):
             # En cas d'erreur, on peut créer la table si elle n'existe pas
             self._create_audit_table()
 
+    def _refresh_all_interfaces(self):
+        """Actualise toutes les interfaces après un changement"""
+        try:
+            # Actualiser les statistiques
+            self._update_stats_immediately()
+            
+            # Actualiser la liste des utilisateurs si l'onglet est ouvert
+            if hasattr(self, 'users_table') and self.users_table:
+                self._refresh_users(self.users_table, "")
+            
+            # Actualiser le journal d'activité si l'onglet est ouvert
+            if hasattr(self, 'timeline_container'):
+                self._refresh_audit_logs("Tous")
+            
+            # Actualiser les matricules si l'onglet est ouvert
+            if hasattr(self, 'matricules_parent') and self.matricules_parent:
+                self._refresh_matricules_tab(self.matricules_parent)
+                
+        except Exception as e:
+            print(f"Erreur lors de l'actualisation des interfaces: {e}")
+
     def _create_audit_table(self):
         """Crée la table de logs d'activité si elle n'existe pas"""
         try:
@@ -1505,73 +1533,1001 @@ class AdminFrame(ctk.CTkFrame):
             print(f"Erreur lors de la création de la table logs_activite: {e}")
 
     def _build_cli_tab(self, parent):
-        ctk.CTkLabel(parent, text="Terminal CLI", font=ctk.CTkFont(size=19, weight="bold"), text_color="#00ff00").pack(pady=(18, 2))
-        ctk.CTkLabel(parent, text="Terminal système compact - Commandes disponibles", font=ctk.CTkFont(size=13), text_color="#cccccc").pack(pady=(0, 10))
+        # Titre et description
+        ctk.CTkLabel(parent, text="💻 Terminal CLI", font=ctk.CTkFont(size=19, weight="bold"), text_color="#00ff00").pack(pady=(18, 2))
+        ctk.CTkLabel(parent, text="Terminal système avancé - Gestion complète du SGE via commandes", font=ctk.CTkFont(size=13), text_color="#cccccc").pack(pady=(0, 10))
         
-        # Terminal compact et sombre
-        cli_frame = ctk.CTkFrame(parent, fg_color="#000000", corner_radius=8)
+        # Terminal moderne et sombre
+        cli_frame = ctk.CTkFrame(parent, fg_color="#0a0a0a", corner_radius=12, border_width=2, border_color="#333333")
         cli_frame.pack(fill="both", expand=True, padx=30, pady=10)
         
-        # Zone de sortie compacte
-        output = ctk.CTkTextbox(cli_frame, height=120, font=ctk.CTkFont(size=11, family="Consolas"), fg_color="#000000", text_color="#00ff00")
-        output.pack(pady=5, fill="both", expand=True, padx=5)
+        # Zone de sortie avec scroll
+        output = ctk.CTkTextbox(cli_frame, font=ctk.CTkFont(size=12, family="Consolas"), 
+                               fg_color="#0a0a0a", text_color="#00ff00", 
+                               border_width=1, border_color="#333333")
+        output.pack(pady=8, fill="both", expand=True, padx=8)
         
         # Message de bienvenue
-        output.insert("end", "SAC Terminal v1.0 - Tapez 'help' pour l'aide\n")
+        output.insert("end", "╔══════════════════════════════════════════════════════════════╗\n")
+        output.insert("end", "║                    SAC Terminal v2.0                        ║\n")
+        output.insert("end", "║              Système de Gestion d'Entrepôts                 ║\n")
+        output.insert("end", "╚══════════════════════════════════════════════════════════════╝\n\n")
+        output.insert("end", "🔧 Tapez 'help' pour voir toutes les commandes disponibles\n")
+        output.insert("end", "📚 Tapez 'help <commande>' pour l'aide sur une commande spécifique\n\n")
         output.insert("end", "root@sac:~$ ")
         
-        # Barre de commande compacte
-        cmd_frame = ctk.CTkFrame(cli_frame, fg_color="#000000", height=30)
-        cmd_frame.pack(fill="x", padx=5, pady=2)
+        # Barre de commande moderne
+        cmd_frame = ctk.CTkFrame(cli_frame, fg_color="#1a1a1a", height=40, corner_radius=8)
+        cmd_frame.pack(fill="x", padx=8, pady=(0, 8))
         cmd_frame.pack_propagate(False)
         
-        entry = ctk.CTkEntry(cmd_frame, placeholder_text="Commande...", font=ctk.CTkFont(size=11, family="Consolas"), 
-                            height=25, fg_color="#000000", text_color="#00ff00", 
-                            placeholder_text_color="#666666", border_width=0)
-        entry.pack(side="left", fill="x", expand=True, padx=2)
+        # Label pour le prompt
+        prompt_label = ctk.CTkLabel(cmd_frame, text="root@sac:~$ ", font=ctk.CTkFont(size=12, family="Consolas"), 
+                                   text_color="#00ff00", fg_color="transparent")
+        prompt_label.pack(side="left", padx=(10, 5))
         
-        def on_enter(event=None):
-            cmd = entry.get().strip()
+        # Zone de saisie
+        entry = ctk.CTkEntry(cmd_frame, placeholder_text="Entrez votre commande...", 
+                            font=ctk.CTkFont(size=12, family="Consolas"), 
+                            height=30, fg_color="#2a2a2a", text_color="#00ff00", 
+                            placeholder_text_color="#666666", border_width=1, border_color="#444444")
+        entry.pack(side="left", fill="x", expand=True, padx=(0, 10))
+        
+        # Stocker les références pour les utiliser dans les commandes
+        self.cli_output = output
+        self.cli_entry = entry
+        
+        def execute_command(cmd):
+            """Exécute une commande CLI"""
             if not cmd:
                 return
             
             output.insert("end", f"{cmd}\n")
             
-            # Commandes simples
-            if cmd.lower() == "help":
-                output.insert("end", "help, users, stats, clear, date, ls, pwd, exit\n")
-            elif cmd.lower() == "users":
-                output.insert("end", "Liste des utilisateurs...\n")
-            elif cmd.lower() == "stats":
-                output.insert("end", "CPU: 15% | RAM: 2.1GB/8GB | Uptime: 2j 15h\n")
-            elif cmd.lower() == "clear":
-                output.delete("1.0", "end")
-                output.insert("end", "SAC Terminal v1.0 - Tapez 'help' pour l'aide\n")
-            elif cmd.lower() == "date":
-                import datetime
-                now = datetime.datetime.now()
-                output.insert("end", f"{now.strftime('%d/%m/%Y %H:%M:%S')}\n")
-            elif cmd.lower() == "ls":
-                output.insert("end", "app.py  database.py  admin_page.py  sac.db\n")
-            elif cmd.lower() == "pwd":
-                output.insert("end", "/home/sac/admin\n")
-            elif cmd.lower() == "exit":
-                output.insert("end", "Déconnexion...\n")
-            else:
-                output.insert("end", f"Commande '{cmd}' non reconnue\n")
+            # Parser la commande
+            parts = cmd.split()
+            command = parts[0].lower()
+            args = parts[1:] if len(parts) > 1 else []
+            
+            try:
+                if command == "help":
+                    self._cli_help(args)
+                elif command == "user":
+                    self._cli_user(args)
+                elif command == "product":
+                    self._cli_product(args)
+                elif command == "report":
+                    self._cli_report(args)
+                elif command == "export":
+                    self._cli_export(args)
+                elif command == "download":
+                    self._cli_download(args)
+                elif command == "clear":
+                    output.delete("1.0", "end")
+                    output.insert("end", "╔══════════════════════════════════════════════════════════════╗\n")
+                    output.insert("end", "║                    SAC Terminal v2.0                        ║\n")
+                    output.insert("end", "║              Système de Gestion d'Entrepôts                 ║\n")
+                    output.insert("end", "╚══════════════════════════════════════════════════════════════╝\n\n")
+                    output.insert("end", "🔧 Tapez 'help' pour voir toutes les commandes disponibles\n")
+                    output.insert("end", "📚 Tapez 'help <commande>' pour l'aide sur une commande spécifique\n\n")
+                elif command == "date":
+                    import datetime
+                    now = datetime.datetime.now()
+                    output.insert("end", f"📅 {now.strftime('%d/%m/%Y %H:%M:%S')}\n")
+                elif command == "status":
+                    self._cli_status()
+                elif command == "exit" or command == "quit":
+                    output.insert("end", "👋 Déconnexion du terminal...\n")
+                else:
+                    output.insert("end", f"❌ Commande '{command}' non reconnue. Tapez 'help' pour l'aide.\n")
+                    
+            except Exception as e:
+                output.insert("end", f"❌ Erreur: {str(e)}\n")
             
             output.insert("end", "root@sac:~$ ")
             output.see("end")
+        
+        def on_enter(event=None):
+            cmd = entry.get().strip()
             entry.delete(0, "end")
+            execute_command(cmd)
         
         entry.bind('<Return>', on_enter)
         
-        # Bouton compact
-        ctk.CTkButton(cmd_frame, text="▶", width=30, height=25, fg_color="#00ff00", 
-                     text_color="#000000", corner_radius=4, command=on_enter).pack(side="right", padx=2)
+        # Bouton d'exécution
+        ctk.CTkButton(cmd_frame, text="▶ Exécuter", width=100, height=30, fg_color="#00aa00", 
+                     text_color="#ffffff", corner_radius=6, command=on_enter).pack(side="right", padx=10)
         
-        ctk.CTkLabel(parent, text="Terminal compact - Utilisez Enter pour exécuter", 
-                    font=ctk.CTkFont(size=10, slant="italic"), text_color="#888888").pack(pady=(5, 0))
+        # Informations d'aide
+        help_frame = ctk.CTkFrame(parent, fg_color="#1a1a1a", corner_radius=8)
+        help_frame.pack(fill="x", padx=30, pady=(0, 10))
+        
+        ctk.CTkLabel(help_frame, text="💡 Astuce: Utilisez Tab pour l'auto-complétion • Ctrl+L pour effacer • ↑↓ pour l'historique", 
+                    font=ctk.CTkFont(size=11, slant="italic"), text_color="#888888").pack(pady=8)
+
+    def _cli_help(self, args):
+        """Affiche l'aide des commandes CLI"""
+        output = self.cli_output
+        
+        if not args:
+            # Aide générale
+            output.insert("end", "\n📚 COMMANDES DISPONIBLES:\n")
+            output.insert("end", "═" * 60 + "\n\n")
+            
+            output.insert("end", "👥 GESTION DES UTILISATEURS:\n")
+            output.insert("end", "  user add <nom> <prenom> <email> <role>     - Ajouter un utilisateur\n")
+            output.insert("end", "  user del <email>                           - Supprimer un utilisateur\n")
+            output.insert("end", "  user mod <email> <champ> <valeur>          - Modifier un utilisateur\n")
+            output.insert("end", "  user list                                  - Lister tous les utilisateurs\n")
+            output.insert("end", "  user search <terme>                        - Rechercher un utilisateur\n\n")
+            
+            output.insert("end", "📦 GESTION DES PRODUITS:\n")
+            output.insert("end", "  product add <nom> <description> <prix>     - Ajouter un produit\n")
+            output.insert("end", "  product del <id>                           - Supprimer un produit\n")
+            output.insert("end", "  product mod <id> <champ> <valeur>          - Modifier un produit\n")
+            output.insert("end", "  product list                               - Lister tous les produits\n")
+            output.insert("end", "  product search <terme>                     - Rechercher un produit\n\n")
+            
+            output.insert("end", "📊 RAPPORTS ET EXPORTS:\n")
+            output.insert("end", "  report users                               - Rapport des utilisateurs\n")
+            output.insert("end", "  report products                            - Rapport des produits\n")
+            output.insert("end", "  report movements                           - Rapport des mouvements\n")
+            output.insert("end", "  report packaging                           - Rapport des emballages\n\n")
+            
+            output.insert("end", "📥 EXPORTS ET TÉLÉCHARGEMENTS:\n")
+            output.insert("end", "  export users [format]                      - Exporter les utilisateurs\n")
+            output.insert("end", "  export products [format]                   - Exporter les produits\n")
+            output.insert("end", "  export movements [format]                  - Exporter les mouvements\n")
+            output.insert("end", "  download expedition <id>                   - Télécharger bon d'expédition\n")
+            output.insert("end", "  download reception <id>                    - Télécharger bon de réception\n\n")
+            
+            output.insert("end", "🔧 COMMANDES SYSTÈME:\n")
+            output.insert("end", "  clear                                      - Effacer l'écran\n")
+            output.insert("end", "  date                                       - Afficher la date/heure\n")
+            output.insert("end", "  status                                     - Statut du système\n")
+            output.insert("end", "  exit/quit                                  - Quitter le terminal\n\n")
+            
+            output.insert("end", "📝 Formats d'export supportés: csv, xlsx, pdf, json\n")
+            output.insert("end", "💡 Exemple: export users csv\n\n")
+            
+        else:
+            # Aide spécifique pour une commande
+            command = args[0].lower()
+            if command == "user":
+                output.insert("end", "\n👥 AIDE - GESTION DES UTILISATEURS:\n")
+                output.insert("end", "═" * 50 + "\n")
+                output.insert("end", "user add <nom> <prenom> <email> <role>\n")
+                output.insert("end", "  Ajoute un nouvel utilisateur au système\n")
+                output.insert("end", "  Rôles disponibles: admin, manager, operator\n")
+                output.insert("end", "  Exemple: user add Dupont Jean jean@example.com admin\n\n")
+                
+                output.insert("end", "user del <email>\n")
+                output.insert("end", "  Supprime un utilisateur par son email\n")
+                output.insert("end", "  Exemple: user del jean@example.com\n\n")
+                
+                output.insert("end", "user mod <email> <champ> <valeur>\n")
+                output.insert("end", "  Modifie un champ d'un utilisateur\n")
+                output.insert("end", "  Champs: nom, prenom, email, role, actif\n")
+                output.insert("end", "  Exemple: user mod jean@example.com role manager\n\n")
+                
+                output.insert("end", "user list\n")
+                output.insert("end", "  Affiche la liste de tous les utilisateurs\n\n")
+                
+                output.insert("end", "user search <terme>\n")
+                output.insert("end", "  Recherche un utilisateur par nom, email ou matricule\n")
+                output.insert("end", "  Exemple: user search Dupont\n\n")
+                
+            elif command == "product":
+                output.insert("end", "\n📦 AIDE - GESTION DES PRODUITS:\n")
+                output.insert("end", "═" * 50 + "\n")
+                output.insert("end", "product add <nom> <description> <prix>\n")
+                output.insert("end", "  Ajoute un nouveau produit\n")
+                output.insert("end", "  Exemple: product add \"Chocolat Noir\" \"Chocolat 70% cacao\" 5.99\n\n")
+                
+                output.insert("end", "product del <id>\n")
+                output.insert("end", "  Supprime un produit par son ID\n")
+                output.insert("end", "  Exemple: product del 123\n\n")
+                
+                output.insert("end", "product mod <id> <champ> <valeur>\n")
+                output.insert("end", "  Modifie un champ d'un produit\n")
+                output.insert("end", "  Champs: nom, description, prix, stock\n")
+                output.insert("end", "  Exemple: product mod 123 prix 6.50\n\n")
+                
+                output.insert("end", "product list\n")
+                output.insert("end", "  Affiche la liste de tous les produits\n\n")
+                
+                output.insert("end", "product search <terme>\n")
+                output.insert("end", "  Recherche un produit par nom ou description\n")
+                output.insert("end", "  Exemple: product search chocolat\n\n")
+                
+            elif command == "export":
+                output.insert("end", "\n📤 AIDE - EXPORTS:\n")
+                output.insert("end", "═" * 50 + "\n")
+                output.insert("end", "export <table> [format]\n")
+                output.insert("end", "  Exporte une table vers un fichier\n")
+                output.insert("end", "  Tables: users, products, movements, packaging\n")
+                output.insert("end", "  Formats: csv, xlsx, pdf, json (défaut: csv)\n")
+                output.insert("end", "  Exemples:\n")
+                output.insert("end", "    export users csv\n")
+                output.insert("end", "    export products xlsx\n")
+                output.insert("end", "    export movements pdf\n\n")
+                
+            elif command == "download":
+                output.insert("end", "\n📥 AIDE - TÉLÉCHARGEMENTS:\n")
+                output.insert("end", "═" * 50 + "\n")
+                output.insert("end", "download expedition <id>\n")
+                output.insert("end", "  Télécharge un bon d'expédition\n")
+                output.insert("end", "  Exemple: download expedition 456\n\n")
+                
+                output.insert("end", "download reception <id>\n")
+                output.insert("end", "  Télécharge un bon de réception\n")
+                output.insert("end", "  Exemple: download reception 789\n\n")
+                
+            else:
+                output.insert("end", f"❌ Aucune aide disponible pour la commande '{command}'\n")
+                output.insert("end", "💡 Tapez 'help' pour voir toutes les commandes disponibles\n")
+
+    def _cli_user(self, args):
+        """Gestion des utilisateurs via CLI"""
+        output = self.cli_output
+        
+        if not args:
+            output.insert("end", "❌ Commande incomplète. Tapez 'help user' pour l'aide.\n")
+            return
+        
+        action = args[0].lower()
+        
+        try:
+            if action == "add" and len(args) >= 5:
+                nom, prenom, email, role = args[1], args[2], args[3], args[4]
+                
+                # Générer un matricule automatique
+                from matricule_manager import MatriculeManager
+                matricule = MatriculeManager.generate_matricule(role)
+                
+                # Ajouter l'utilisateur en base
+                import psycopg2
+                conn = psycopg2.connect(**PG_CONN)
+                cursor = conn.cursor()
+                
+                # Vérifier si l'email existe déjà
+                cursor.execute("SELECT email FROM sge_cre.individus WHERE email = %s", (email,))
+                if cursor.fetchone():
+                    output.insert("end", f"❌ L'email {email} existe déjà dans la base de données.\n")
+                    conn.close()
+                    return
+                
+                cursor.execute("""
+                    INSERT INTO sge_cre.individus (nom, prenom, email, password, role, matricule, actif, adresse, telephone)
+                    VALUES (%s, %s, %s, %s, %s, %s, true, 'Adresse par défaut', 'Téléphone par défaut')
+                """, (nom, prenom, email, "password123", role, matricule))
+                
+                conn.commit()
+                conn.close()
+                
+                output.insert("end", f"✅ Utilisateur {prenom} {nom} ajouté avec succès!\n")
+                output.insert("end", f"📧 Email: {email}\n")
+                output.insert("end", f"🆔 Matricule: {matricule}\n")
+                output.insert("end", f"👤 Rôle: {role}\n")
+                
+                # Log de l'activité
+                self._log_activity("Création", f"Création utilisateur via CLI: {prenom} {nom}", "CLI", f"Email: {email}, Rôle: {role}")
+                
+                # Actualiser les interfaces
+                self._refresh_all_interfaces()
+                
+            elif action == "del" and len(args) >= 2:
+                email = args[1]
+                
+                import psycopg2
+                conn = psycopg2.connect(**PG_CONN)
+                cursor = conn.cursor()
+                
+                # Vérifier si l'utilisateur existe
+                cursor.execute("SELECT nom, prenom FROM sge_cre.individus WHERE email = %s", (email,))
+                user = cursor.fetchone()
+                
+                if user:
+                    cursor.execute("DELETE FROM sge_cre.individus WHERE email = %s", (email,))
+                    conn.commit()
+                    output.insert("end", f"✅ Utilisateur {user[1]} {user[0]} supprimé avec succès!\n")
+                    
+                    # Log de l'activité
+                    self._log_activity("Suppression", f"Suppression utilisateur via CLI: {user[1]} {user[0]}", "CLI", f"Email: {email}")
+                    
+                    # Actualiser les interfaces
+                    self._refresh_all_interfaces()
+                else:
+                    output.insert("end", f"❌ Utilisateur avec l'email {email} non trouvé.\n")
+                
+                conn.close()
+                
+            elif action == "mod" and len(args) >= 4:
+                email, champ, valeur = args[1], args[2], args[3]
+                
+                import psycopg2
+                conn = psycopg2.connect(**PG_CONN)
+                cursor = conn.cursor()
+                
+                # Vérifier si l'utilisateur existe
+                cursor.execute("SELECT nom, prenom FROM sge_cre.individus WHERE email = %s", (email,))
+                user = cursor.fetchone()
+                
+                if user:
+                    # Vérifier que le champ existe
+                    allowed_fields = ['nom', 'prenom', 'email', 'role', 'actif', 'adresse', 'telephone']
+                    if champ not in allowed_fields:
+                        output.insert("end", f"❌ Champ '{champ}' non autorisé. Champs autorisés: {', '.join(allowed_fields)}\n")
+                        conn.close()
+                        return
+                    
+                    cursor.execute(f"UPDATE sge_cre.individus SET {champ} = %s WHERE email = %s", (valeur, email))
+                    conn.commit()
+                    output.insert("end", f"✅ Utilisateur {user[1]} {user[0]} modifié avec succès!\n")
+                    output.insert("end", f"📝 Champ '{champ}' mis à jour vers '{valeur}'\n")
+                    
+                    # Log de l'activité
+                    self._log_activity("Modification", f"Modification utilisateur via CLI: {user[1]} {user[0]}", "CLI", f"Champ: {champ}, Nouvelle valeur: {valeur}")
+                    
+                    # Actualiser les interfaces
+                    self._refresh_all_interfaces()
+                else:
+                    output.insert("end", f"❌ Utilisateur avec l'email {email} non trouvé.\n")
+                
+                conn.close()
+                
+            elif action == "list":
+                import psycopg2
+                conn = psycopg2.connect(**PG_CONN)
+                cursor = conn.cursor()
+                
+                cursor.execute("SELECT nom, prenom, email, role, matricule, actif FROM sge_cre.individus ORDER BY nom")
+                users = cursor.fetchall()
+                
+                if users:
+                    output.insert("end", "\n👥 LISTE DES UTILISATEURS:\n")
+                    output.insert("end", "─" * 80 + "\n")
+                    output.insert("end", f"{'Nom':<15} {'Prénom':<15} {'Email':<25} {'Rôle':<20} {'Matricule':<10} {'Statut':<8}\n")
+                    output.insert("end", "─" * 80 + "\n")
+                    
+                    for user in users:
+                        nom, prenom, email, role, matricule, actif = user
+                        statut = "🟢 Actif" if actif else "🔴 Inactif"
+                        output.insert("end", f"{nom:<15} {prenom:<15} {email:<25} {role:<20} {matricule:<10} {statut:<8}\n")
+                    
+                    output.insert("end", f"\n📊 Total: {len(users)} utilisateur(s)\n")
+                else:
+                    output.insert("end", "📭 Aucun utilisateur trouvé.\n")
+                
+                conn.close()
+                
+            elif action == "search" and len(args) >= 2:
+                terme = args[1]
+                
+                import psycopg2
+                conn = psycopg2.connect(**PG_CONN)
+                cursor = conn.cursor()
+                
+                cursor.execute("""
+                    SELECT nom, prenom, email, role, matricule, actif 
+                    FROM sge_cre.individus 
+                    WHERE nom ILIKE %s OR prenom ILIKE %s OR email ILIKE %s OR matricule ILIKE %s
+                    ORDER BY nom
+                """, (f"%{terme}%", f"%{terme}%", f"%{terme}%", f"%{terme}%"))
+                
+                users = cursor.fetchall()
+                
+                if users:
+                    output.insert("end", f"\n🔍 RÉSULTATS DE RECHERCHE POUR '{terme}':\n")
+                    output.insert("end", "─" * 80 + "\n")
+                    output.insert("end", f"{'Nom':<15} {'Prénom':<15} {'Email':<25} {'Rôle':<20} {'Matricule':<10} {'Statut':<8}\n")
+                    output.insert("end", "─" * 80 + "\n")
+                    
+                    for user in users:
+                        nom, prenom, email, role, matricule, actif = user
+                        statut = "🟢 Actif" if actif else "🔴 Inactif"
+                        output.insert("end", f"{nom:<15} {prenom:<15} {email:<25} {role:<20} {matricule:<10} {statut:<8}\n")
+                    
+                    output.insert("end", f"\n📊 {len(users)} résultat(s) trouvé(s)\n")
+                else:
+                    output.insert("end", f"❌ Aucun utilisateur trouvé pour '{terme}'.\n")
+                
+                conn.close()
+                
+            else:
+                output.insert("end", "❌ Commande incomplète. Tapez 'help user' pour l'aide.\n")
+                
+        except Exception as e:
+            output.insert("end", f"❌ Erreur: {str(e)}\n")
+
+    def _cli_product(self, args):
+        """Gestion des produits via CLI"""
+        output = self.cli_output
+        
+        if not args:
+            output.insert("end", "❌ Commande incomplète. Tapez 'help product' pour l'aide.\n")
+            return
+        
+        action = args[0].lower()
+        
+        try:
+            if action == "add" and len(args) >= 4:
+                nom = args[1]
+                description = args[2]
+                prix = float(args[3])
+                
+                import psycopg2
+                conn = psycopg2.connect(**PG_CONN)
+                cursor = conn.cursor()
+                
+                # Vérifier si le produit existe déjà
+                cursor.execute("SELECT nom FROM sge_cre.produits WHERE nom = %s", (nom,))
+                if cursor.fetchone():
+                    output.insert("end", f"❌ Le produit '{nom}' existe déjà dans la base de données.\n")
+                    conn.close()
+                    return
+                
+                cursor.execute("""
+                    INSERT INTO sge_cre.produits (nom, description, prix, stock_disponible, categorie, fournisseur)
+                    VALUES (%s, %s, %s, 0, 'Catégorie par défaut', 'Fournisseur par défaut')
+                """, (nom, description, prix))
+                
+                conn.commit()
+                conn.close()
+                
+                output.insert("end", f"✅ Produit '{nom}' ajouté avec succès!\n")
+                output.insert("end", f"📝 Description: {description}\n")
+                output.insert("end", f"💰 Prix: {prix}€\n")
+                output.insert("end", f"📦 Stock initial: 0\n")
+                
+                # Log de l'activité
+                self._log_activity("Création", f"Création produit via CLI: {nom}", "CLI", f"Prix: {prix}€")
+                
+                # Actualiser les interfaces
+                self._refresh_all_interfaces()
+                
+            elif action == "del" and len(args) >= 2:
+                nom = args[1]
+                
+                import psycopg2
+                conn = psycopg2.connect(**PG_CONN)
+                cursor = conn.cursor()
+                
+                # Vérifier si le produit existe
+                cursor.execute("SELECT nom FROM sge_cre.produits WHERE nom = %s", (nom,))
+                if cursor.fetchone():
+                    cursor.execute("DELETE FROM sge_cre.produits WHERE nom = %s", (nom,))
+                    conn.commit()
+                    output.insert("end", f"✅ Produit '{nom}' supprimé avec succès!\n")
+                    
+                    # Log de l'activité
+                    self._log_activity("Suppression", f"Suppression produit via CLI: {nom}", "CLI", "")
+                    
+                    # Actualiser les interfaces
+                    self._refresh_all_interfaces()
+                else:
+                    output.insert("end", f"❌ Produit '{nom}' non trouvé.\n")
+                
+                conn.close()
+                
+            elif action == "mod" and len(args) >= 4:
+                nom, champ, valeur = args[1], args[2], args[3]
+                
+                import psycopg2
+                conn = psycopg2.connect(**PG_CONN)
+                cursor = conn.cursor()
+                
+                # Vérifier si le produit existe
+                cursor.execute("SELECT nom FROM sge_cre.produits WHERE nom = %s", (nom,))
+                if cursor.fetchone():
+                    # Vérifier que le champ existe
+                    allowed_fields = ['nom', 'description', 'prix', 'stock_disponible', 'categorie', 'fournisseur']
+                    if champ not in allowed_fields:
+                        output.insert("end", f"❌ Champ '{champ}' non autorisé. Champs autorisés: {', '.join(allowed_fields)}\n")
+                        conn.close()
+                        return
+                    
+                    cursor.execute(f"UPDATE sge_cre.produits SET {champ} = %s WHERE nom = %s", (valeur, nom))
+                    conn.commit()
+                    output.insert("end", f"✅ Produit '{nom}' modifié avec succès!\n")
+                    output.insert("end", f"📝 Champ '{champ}' mis à jour vers '{valeur}'\n")
+                    
+                    # Log de l'activité
+                    self._log_activity("Modification", f"Modification produit via CLI: {nom}", "CLI", f"Champ: {champ}, Nouvelle valeur: {valeur}")
+                    
+                    # Actualiser les interfaces
+                    self._refresh_all_interfaces()
+                else:
+                    output.insert("end", f"❌ Produit '{nom}' non trouvé.\n")
+                
+                conn.close()
+                
+            elif action == "list":
+                import psycopg2
+                conn = psycopg2.connect(**PG_CONN)
+                cursor = conn.cursor()
+                
+                cursor.execute("SELECT id, nom, description, prix, stock_disponible FROM sge_cre.produits ORDER BY nom")
+                products = cursor.fetchall()
+                
+                if products:
+                    output.insert("end", "\n📦 LISTE DES PRODUITS:\n")
+                    output.insert("end", "─" * 80 + "\n")
+                    output.insert("end", f"{'ID':<5} {'Nom':<20} {'Description':<25} {'Prix':<8} {'Stock':<8}\n")
+                    output.insert("end", "─" * 80 + "\n")
+                    
+                    for product in products:
+                        id_prod, nom, description, prix, stock = product
+                        output.insert("end", f"{id_prod:<5} {nom:<20} {description:<25} {prix:<8}€ {stock:<8}\n")
+                    
+                    output.insert("end", f"\n📊 Total: {len(products)} produit(s)\n")
+                else:
+                    output.insert("end", "📭 Aucun produit trouvé.\n")
+                
+                conn.close()
+                
+            elif action == "search" and len(args) >= 2:
+                terme = args[1]
+                
+                import psycopg2
+                conn = psycopg2.connect(**PG_CONN)
+                cursor = conn.cursor()
+                
+                cursor.execute("""
+                    SELECT id, nom, description, prix, stock_disponible 
+                    FROM sge_cre.produits 
+                    WHERE nom ILIKE %s OR description ILIKE %s
+                    ORDER BY nom
+                """, (f"%{terme}%", f"%{terme}%"))
+                
+                products = cursor.fetchall()
+                
+                if products:
+                    output.insert("end", f"\n🔍 RÉSULTATS DE RECHERCHE POUR '{terme}':\n")
+                    output.insert("end", "─" * 80 + "\n")
+                    output.insert("end", f"{'ID':<5} {'Nom':<20} {'Description':<25} {'Prix':<8} {'Stock':<8}\n")
+                    output.insert("end", "─" * 80 + "\n")
+                    
+                    for product in products:
+                        id_prod, nom, description, prix, stock = product
+                        output.insert("end", f"{id_prod:<5} {nom:<20} {description:<25} {prix:<8}€ {stock:<8}\n")
+                    
+                    output.insert("end", f"\n📊 {len(products)} résultat(s) trouvé(s)\n")
+                else:
+                    output.insert("end", f"❌ Aucun produit trouvé pour '{terme}'.\n")
+                
+                conn.close()
+                
+            else:
+                output.insert("end", "❌ Commande incomplète. Tapez 'help product' pour l'aide.\n")
+                
+        except Exception as e:
+            output.insert("end", f"❌ Erreur: {str(e)}\n")
+
+    def _cli_report(self, args):
+        """Génération de rapports via CLI"""
+        output = self.cli_output
+        
+        if not args:
+            output.insert("end", "❌ Commande incomplète. Tapez 'help report' pour l'aide.\n")
+            return
+        
+        report_type = args[0].lower()
+        
+        try:
+            import psycopg2
+            conn = psycopg2.connect(**PG_CONN)
+            cursor = conn.cursor()
+            
+            if report_type == "users":
+                output.insert("end", "📊 Génération du rapport des utilisateurs...\n")
+                
+                # Statistiques des utilisateurs
+                cursor.execute("SELECT COUNT(*) FROM sge_cre.individus")
+                total_users = cursor.fetchone()[0]
+                
+                cursor.execute("SELECT COUNT(*) FROM sge_cre.individus WHERE actif = true")
+                active_users = cursor.fetchone()[0]
+                
+                cursor.execute("SELECT role, COUNT(*) FROM sge_cre.individus GROUP BY role")
+                roles_stats = cursor.fetchall()
+                
+                output.insert("end", f"✅ Rapport des utilisateurs généré!\n")
+                output.insert("end", f"📊 Total utilisateurs: {total_users}\n")
+                output.insert("end", f"🟢 Utilisateurs actifs: {active_users}\n")
+                output.insert("end", f"📈 Répartition par rôle:\n")
+                
+                for role, count in roles_stats:
+                    output.insert("end", f"   • {role}: {count} utilisateur(s)\n")
+                
+                # Log de l'activité
+                self._log_activity("Rapport", f"Génération rapport utilisateurs via CLI", "CLI", f"Total: {total_users}, Actifs: {active_users}")
+                
+            elif report_type == "products":
+                output.insert("end", "📊 Génération du rapport des produits...\n")
+                
+                # Statistiques des produits
+                cursor.execute("SELECT COUNT(*) FROM sge_cre.produits")
+                total_products = cursor.fetchone()[0]
+                
+                cursor.execute("SELECT COUNT(*) FROM sge_cre.produits WHERE stock_disponible > 0")
+                in_stock = cursor.fetchone()[0]
+                
+                cursor.execute("SELECT AVG(prix) FROM sge_cre.produits")
+                avg_price = cursor.fetchone()[0] or 0
+                
+                cursor.execute("SELECT SUM(stock_disponible) FROM sge_cre.produits")
+                total_stock = cursor.fetchone()[0] or 0
+                
+                output.insert("end", f"✅ Rapport des produits généré!\n")
+                output.insert("end", f"📦 Total produits: {total_products}\n")
+                output.insert("end", f"📥 En stock: {in_stock}\n")
+                output.insert("end", f"💰 Prix moyen: {avg_price:.2f}€\n")
+                output.insert("end", f"📊 Stock total: {total_stock} unités\n")
+                
+                # Log de l'activité
+                self._log_activity("Rapport", f"Génération rapport produits via CLI", "CLI", f"Total: {total_products}, En stock: {in_stock}")
+                
+            elif report_type == "movements":
+                output.insert("end", "📊 Génération du rapport des mouvements...\n")
+                
+                # Statistiques des mouvements
+                cursor.execute("SELECT COUNT(*) FROM sge_cre.mouvements_stock")
+                total_movements = cursor.fetchone()[0]
+                
+                cursor.execute("SELECT type_mouvement, COUNT(*) FROM sge_cre.mouvements_stock GROUP BY type_mouvement")
+                movement_types = cursor.fetchall()
+                
+                cursor.execute("SELECT DATE(date_mouvement), COUNT(*) FROM sge_cre.mouvements_stock GROUP BY DATE(date_mouvement) ORDER BY DATE(date_mouvement) DESC LIMIT 7")
+                recent_movements = cursor.fetchall()
+                
+                output.insert("end", f"✅ Rapport des mouvements généré!\n")
+                output.insert("end", f"📊 Total mouvements: {total_movements}\n")
+                output.insert("end", f"📈 Types de mouvements:\n")
+                
+                for mvt_type, count in movement_types:
+                    output.insert("end", f"   • {mvt_type}: {count} mouvement(s)\n")
+                
+                output.insert("end", f"📅 Mouvements récents (7 derniers jours):\n")
+                for date, count in recent_movements:
+                    output.insert("end", f"   • {date}: {count} mouvement(s)\n")
+                
+                # Log de l'activité
+                self._log_activity("Rapport", f"Génération rapport mouvements via CLI", "CLI", f"Total: {total_movements}")
+                
+            elif report_type == "packaging":
+                output.insert("end", "📊 Génération du rapport des emballages...\n")
+                
+                # Statistiques des emballages
+                cursor.execute("SELECT COUNT(*) FROM sge_cre.emballages")
+                total_packaging = cursor.fetchone()[0]
+                
+                cursor.execute("SELECT type_emballage, COUNT(*) FROM sge_cre.emballages GROUP BY type_emballage")
+                packaging_types = cursor.fetchall()
+                
+                output.insert("end", f"✅ Rapport des emballages généré!\n")
+                output.insert("end", f"📦 Total emballages: {total_packaging}\n")
+                output.insert("end", f"📈 Types d'emballages:\n")
+                
+                for pkg_type, count in packaging_types:
+                    output.insert("end", f"   • {pkg_type}: {count} emballage(s)\n")
+                
+                # Log de l'activité
+                self._log_activity("Rapport", f"Génération rapport emballages via CLI", "CLI", f"Total: {total_packaging}")
+                
+            else:
+                output.insert("end", f"❌ Type de rapport '{report_type}' non reconnu.\n")
+            
+            conn.close()
+                
+        except Exception as e:
+            output.insert("end", f"❌ Erreur: {str(e)}\n")
+
+    def _cli_export(self, args):
+        """Export de données via CLI"""
+        output = self.cli_output
+        
+        if not args:
+            output.insert("end", "❌ Commande incomplète. Tapez 'help export' pour l'aide.\n")
+            return
+        
+        table = args[0].lower()
+        format_export = args[1].lower() if len(args) > 1 else "csv"
+        
+        try:
+            import psycopg2
+            import csv
+            import json
+            import datetime
+            
+            conn = psycopg2.connect(**PG_CONN)
+            cursor = conn.cursor()
+            
+            # Créer le dossier exports s'il n'existe pas
+            import os
+            if not os.path.exists("exports"):
+                os.makedirs("exports")
+            
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"exports/{table}_{timestamp}.{format_export}"
+            
+            if table == "users":
+                output.insert("end", f"📤 Export des utilisateurs au format {format_export.upper()}...\n")
+                
+                cursor.execute("SELECT nom, prenom, email, role, matricule, actif, adresse, telephone FROM sge_cre.individus ORDER BY nom")
+                users = cursor.fetchall()
+                
+                if format_export == "csv":
+                    with open(filename, 'w', newline='', encoding='utf-8') as csvfile:
+                        writer = csv.writer(csvfile)
+                        writer.writerow(['Nom', 'Prénom', 'Email', 'Rôle', 'Matricule', 'Actif', 'Adresse', 'Téléphone'])
+                        writer.writerows(users)
+                elif format_export == "json":
+                    data = []
+                    for user in users:
+                        data.append({
+                            'nom': user[0],
+                            'prenom': user[1],
+                            'email': user[2],
+                            'role': user[3],
+                            'matricule': user[4],
+                            'actif': user[5],
+                            'adresse': user[6],
+                            'telephone': user[7]
+                        })
+                    with open(filename, 'w', encoding='utf-8') as jsonfile:
+                        json.dump(data, jsonfile, indent=2, ensure_ascii=False)
+                
+                output.insert("end", f"✅ Export terminé: {filename}\n")
+                output.insert("end", f"📊 {len(users)} utilisateur(s) exporté(s)\n")
+                
+                # Log de l'activité
+                self._log_activity("Export", f"Export utilisateurs via CLI", "CLI", f"Format: {format_export}, Fichier: {filename}")
+                
+            elif table == "products":
+                output.insert("end", f"📤 Export des produits au format {format_export.upper()}...\n")
+                
+                cursor.execute("SELECT nom, description, prix, stock_disponible, categorie, fournisseur FROM sge_cre.produits ORDER BY nom")
+                products = cursor.fetchall()
+                
+                if format_export == "csv":
+                    with open(filename, 'w', newline='', encoding='utf-8') as csvfile:
+                        writer = csv.writer(csvfile)
+                        writer.writerow(['Nom', 'Description', 'Prix', 'Stock', 'Catégorie', 'Fournisseur'])
+                        writer.writerows(products)
+                elif format_export == "json":
+                    data = []
+                    for product in products:
+                        data.append({
+                            'nom': product[0],
+                            'description': product[1],
+                            'prix': float(product[2]) if product[2] else 0,
+                            'stock': product[3],
+                            'categorie': product[4],
+                            'fournisseur': product[5]
+                        })
+                    with open(filename, 'w', encoding='utf-8') as jsonfile:
+                        json.dump(data, jsonfile, indent=2, ensure_ascii=False)
+                
+                output.insert("end", f"✅ Export terminé: {filename}\n")
+                output.insert("end", f"📊 {len(products)} produit(s) exporté(s)\n")
+                
+                # Log de l'activité
+                self._log_activity("Export", f"Export produits via CLI", "CLI", f"Format: {format_export}, Fichier: {filename}")
+                
+            elif table == "movements":
+                output.insert("end", f"📤 Export des mouvements au format {format_export.upper()}...\n")
+                
+                cursor.execute("SELECT type_mouvement, quantite, date_mouvement, produit_id, entrepot_id FROM sge_cre.mouvements_stock ORDER BY date_mouvement DESC")
+                movements = cursor.fetchall()
+                
+                if format_export == "csv":
+                    with open(filename, 'w', newline='', encoding='utf-8') as csvfile:
+                        writer = csv.writer(csvfile)
+                        writer.writerow(['Type', 'Quantité', 'Date', 'Produit ID', 'Entrepôt ID'])
+                        writer.writerows(movements)
+                elif format_export == "json":
+                    data = []
+                    for movement in movements:
+                        data.append({
+                            'type': movement[0],
+                            'quantite': movement[1],
+                            'date': movement[2].isoformat() if movement[2] else None,
+                            'produit_id': movement[3],
+                            'entrepot_id': movement[4]
+                        })
+                    with open(filename, 'w', encoding='utf-8') as jsonfile:
+                        json.dump(data, jsonfile, indent=2, ensure_ascii=False)
+                
+                output.insert("end", f"✅ Export terminé: {filename}\n")
+                output.insert("end", f"📊 {len(movements)} mouvement(s) exporté(s)\n")
+                
+                # Log de l'activité
+                self._log_activity("Export", f"Export mouvements via CLI", "CLI", f"Format: {format_export}, Fichier: {filename}")
+                
+            elif table == "packaging":
+                output.insert("end", f"📤 Export des emballages au format {format_export.upper()}...\n")
+                
+                cursor.execute("SELECT type_emballage, description, quantite_disponible FROM sge_cre.emballages ORDER BY type_emballage")
+                packaging = cursor.fetchall()
+                
+                if format_export == "csv":
+                    with open(filename, 'w', newline='', encoding='utf-8') as csvfile:
+                        writer = csv.writer(csvfile)
+                        writer.writerow(['Type', 'Description', 'Quantité'])
+                        writer.writerows(packaging)
+                elif format_export == "json":
+                    data = []
+                    for pkg in packaging:
+                        data.append({
+                            'type': pkg[0],
+                            'description': pkg[1],
+                            'quantite': pkg[2]
+                        })
+                    with open(filename, 'w', encoding='utf-8') as jsonfile:
+                        json.dump(data, jsonfile, indent=2, ensure_ascii=False)
+                
+                output.insert("end", f"✅ Export terminé: {filename}\n")
+                output.insert("end", f"📊 {len(packaging)} emballage(s) exporté(s)\n")
+                
+                # Log de l'activité
+                self._log_activity("Export", f"Export emballages via CLI", "CLI", f"Format: {format_export}, Fichier: {filename}")
+                
+            else:
+                output.insert("end", f"❌ Table '{table}' non reconnue.\n")
+            
+            conn.close()
+                
+        except Exception as e:
+            output.insert("end", f"❌ Erreur: {str(e)}\n")
+
+    def _cli_download(self, args):
+        """Téléchargement de documents via CLI"""
+        output = self.cli_output
+        
+        if not args:
+            output.insert("end", "❌ Commande incomplète. Tapez 'help download' pour l'aide.\n")
+            return
+        
+        doc_type = args[0].lower()
+        
+        if len(args) < 2:
+            output.insert("end", "❌ ID du document manquant.\n")
+            return
+        
+        doc_id = args[1]
+        
+        try:
+            import psycopg2
+            import datetime
+            import os
+            
+            conn = psycopg2.connect(**PG_CONN)
+            cursor = conn.cursor()
+            
+            # Créer le dossier downloads s'il n'existe pas
+            if not os.path.exists("downloads"):
+                os.makedirs("downloads")
+            
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            
+            if doc_type == "expedition":
+                output.insert("end", f"📥 Téléchargement du bon d'expédition #{doc_id}...\n")
+                
+                # Vérifier si l'expédition existe
+                cursor.execute("""
+                    SELECT e.id, e.date_expedition, e.destinataire, e.adresse_livraison, 
+                           p.nom as produit_nom, e.quantite, e.statut
+                    FROM sge_cre.expeditions e
+                    LEFT JOIN sge_cre.produits p ON e.produit_id = p.id
+                    WHERE e.id = %s
+                """, (doc_id,))
+                
+                expedition = cursor.fetchone()
+                
+                if expedition:
+                    filename = f"downloads/bon_expedition_{doc_id}_{timestamp}.txt"
+                    
+                    with open(filename, 'w', encoding='utf-8') as f:
+                        f.write("=" * 50 + "\n")
+                        f.write("BON D'EXPÉDITION\n")
+                        f.write("=" * 50 + "\n\n")
+                        f.write(f"Numéro: {expedition[0]}\n")
+                        f.write(f"Date: {expedition[1]}\n")
+                        f.write(f"Destinataire: {expedition[2]}\n")
+                        f.write(f"Adresse: {expedition[3]}\n")
+                        f.write(f"Produit: {expedition[4]}\n")
+                        f.write(f"Quantité: {expedition[5]}\n")
+                        f.write(f"Statut: {expedition[6]}\n")
+                        f.write("\n" + "=" * 50 + "\n")
+                    
+                    output.insert("end", f"✅ Bon d'expédition #{doc_id} téléchargé avec succès!\n")
+                    output.insert("end", f"📁 Fichier: {filename}\n")
+                    
+                    # Log de l'activité
+                    self._log_activity("Téléchargement", f"Téléchargement bon expédition #{doc_id} via CLI", "CLI", f"Fichier: {filename}")
+                else:
+                    output.insert("end", f"❌ Expédition #{doc_id} non trouvée.\n")
+                
+            elif doc_type == "reception":
+                output.insert("end", f"📥 Téléchargement du bon de réception #{doc_id}...\n")
+                
+                # Vérifier si la réception existe
+                cursor.execute("""
+                    SELECT r.id, r.date_reception, r.fournisseur, r.adresse_reception,
+                           p.nom as produit_nom, r.quantite, r.statut
+                    FROM sge_cre.receptions r
+                    LEFT JOIN sge_cre.produits p ON r.produit_id = p.id
+                    WHERE r.id = %s
+                """, (doc_id,))
+                
+                reception = cursor.fetchone()
+                
+                if reception:
+                    filename = f"downloads/bon_reception_{doc_id}_{timestamp}.txt"
+                    
+                    with open(filename, 'w', encoding='utf-8') as f:
+                        f.write("=" * 50 + "\n")
+                        f.write("BON DE RÉCEPTION\n")
+                        f.write("=" * 50 + "\n\n")
+                        f.write(f"Numéro: {reception[0]}\n")
+                        f.write(f"Date: {reception[1]}\n")
+                        f.write(f"Fournisseur: {reception[2]}\n")
+                        f.write(f"Adresse: {reception[3]}\n")
+                        f.write(f"Produit: {reception[4]}\n")
+                        f.write(f"Quantité: {reception[5]}\n")
+                        f.write(f"Statut: {reception[6]}\n")
+                        f.write("\n" + "=" * 50 + "\n")
+                    
+                    output.insert("end", f"✅ Bon de réception #{doc_id} téléchargé avec succès!\n")
+                    output.insert("end", f"📁 Fichier: {filename}\n")
+                    
+                    # Log de l'activité
+                    self._log_activity("Téléchargement", f"Téléchargement bon réception #{doc_id} via CLI", "CLI", f"Fichier: {filename}")
+                else:
+                    output.insert("end", f"❌ Réception #{doc_id} non trouvée.\n")
+                
+            else:
+                output.insert("end", f"❌ Type de document '{doc_type}' non reconnu.\n")
+            
+            conn.close()
+                
+        except Exception as e:
+            output.insert("end", f"❌ Erreur: {str(e)}\n")
+
+    def _cli_status(self):
+        """Affiche le statut du système"""
+        output = self.cli_output
+        
+        try:
+            import psycopg2
+            conn = psycopg2.connect(**PG_CONN)
+            cursor = conn.cursor()
+            
+            # Statistiques des utilisateurs
+            cursor.execute("SELECT COUNT(*) FROM sge_cre.individus WHERE actif = true")
+            users_actifs = cursor.fetchone()[0]
+            
+            # Statistiques des produits
+            cursor.execute("SELECT COUNT(*) FROM sge_cre.produits")
+            total_products = cursor.fetchone()[0]
+            
+            # Statistiques des mouvements
+            cursor.execute("SELECT COUNT(*) FROM sge_cre.mouvements_stock")
+            total_movements = cursor.fetchone()[0]
+            
+            conn.close()
+            
+            output.insert("end", "\n🔧 STATUT DU SYSTÈME:\n")
+            output.insert("end", "═" * 50 + "\n")
+            output.insert("end", f"👥 Utilisateurs actifs: {users_actifs}\n")
+            output.insert("end", f"📦 Produits en base: {total_products}\n")
+            output.insert("end", f"📊 Mouvements enregistrés: {total_movements}\n")
+            output.insert("end", f"🟢 Système: Opérationnel\n")
+            output.insert("end", f"📅 Dernière vérification: {datetime.datetime.now().strftime('%d/%m/%Y %H:%M:%S')}\n")
+            
+        except Exception as e:
+            output.insert("end", f"❌ Erreur lors de la vérification du statut: {str(e)}\n")
 
     def _open_user_modal(self):
         import threading
