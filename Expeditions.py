@@ -199,19 +199,15 @@ class GestionExpeditionsApp(ctk.CTkFrame):
         """Rafraîchit les données depuis la base en temps réel"""
         try:
             print("🔄 Rafraîchissement des données depuis la base...")
-            
             # Recharger les données depuis la BD
-        self.load_expeditions_data()
-            
+            self.load_expeditions_data()
             # Mettre à jour complètement l'affichage
             self.update_expeditions_display()
-            
             # Afficher une notification de succès
-        if hasattr(self, 'master') and hasattr(self.master, 'show_notification'):
+            if hasattr(self, 'master') and hasattr(self.master, 'show_notification'):
                 self.master.show_notification("✅ Données rafraîchies avec succès")
             else:
                 print("✅ Données rafraîchies avec succès")
-                
         except Exception as e:
             print(f"❌ Erreur lors du rafraîchissement: {e}")
             if hasattr(self, 'master') and hasattr(self.master, 'show_notification'):
@@ -1346,15 +1342,14 @@ class GestionExpeditionsApp(ctk.CTkFrame):
                 if DB_AVAILABLE:
                     # Recherche dans la base de données avec filtres
                     found_expeditions = self._search_expeditions_db(search_term, status_filter, carrier_filter)
-                    else:
+                else:
                     # Recherche locale avec filtres
                     found_expeditions = self._search_expeditions_local(search_term, status_filter, carrier_filter)
                 
                 if found_expeditions:
                     show_search_results(found_expeditions)
-                    else:
+                else:
                     show_no_results()
-                        
             except Exception as e:
                 print(f"❌ Erreur lors de la recherche: {e}")
                 show_no_results()
@@ -1631,7 +1626,10 @@ class GestionExpeditionsApp(ctk.CTkFrame):
                     # Afficher le succès
                     status_label.configure(text=f"✅ Export terminé !\n📁 Fichier: {file_path}", text_color="#10b981")
                     
-                    # Bouton pour ouvrir le dossier
+                    # Ouvrir automatiquement le dossier contenant le fichier exporté
+                    self._open_export_folder(file_path)
+                    
+                    # Bouton pour ouvrir le dossier (optionnel)
                     open_folder_btn = ctk.CTkButton(
                         status_display_frame, 
                         text="📂 Ouvrir le dossier", 
@@ -1647,7 +1645,6 @@ class GestionExpeditionsApp(ctk.CTkFrame):
                     modal.after(5000, modal.destroy)
                 else:
                     status_label.configure(text="❌ Erreur lors de l'export", text_color="#ef4444")
-                    
             except Exception as e:
                 print(f"❌ Erreur export: {e}")
                 status_label.configure(text=f"❌ Erreur: {str(e)}", text_color="#ef4444")
