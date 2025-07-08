@@ -56,9 +56,10 @@ class PackagingFrame(ctk.CTkFrame):
         if self._get_stats_db:
             try:
                 stats = self._get_stats_db()
+                print(f"📊 Statistiques emballages chargées: {stats}")
                 self.cards_data = [
-                    {"title": "Emballages en cours", "value": str(stats["neuf"]), "icon": "📦", "color": "#00B8D4"},
-                    {"title": "Emballages terminés", "value": str(stats["recupere"]), "icon": "✅", "color": "#43A047"},
+                    {"title": "Emballages neufs", "value": str(stats["neuf"]), "icon": "📦", "color": "#00B8D4"},
+                    {"title": "Emballages récupérés", "value": str(stats["recupere"]), "icon": "✅", "color": "#43A047"},
                     {"title": "Emballages en attente", "value": "0", "icon": "⏳", "color": "#FFA000"},
                     {"title": "Emballages rejetés", "value": "0", "icon": "❌", "color": "#D32F2F"},
                     {"title": "Taux de réussite", "value": f"{stats['taux_reussite']}%", "icon": "📊", "color": "#6A1B9A"},
@@ -67,8 +68,8 @@ class PackagingFrame(ctk.CTkFrame):
             except Exception as e:
                 print(f"Erreur lors du chargement des statistiques : {e}")
                 self.cards_data = [
-                    {"title": "Emballages en cours", "value": "0", "icon": "📦", "color": "#00B8D4"},
-                    {"title": "Emballages terminés", "value": "0", "icon": "✅", "color": "#43A047"},
+                    {"title": "Emballages neufs", "value": "0", "icon": "📦", "color": "#00B8D4"},
+                    {"title": "Emballages récupérés", "value": "0", "icon": "✅", "color": "#43A047"},
                     {"title": "Emballages en attente", "value": "0", "icon": "⏳", "color": "#FFA000"},
                     {"title": "Emballages rejetés", "value": "0", "icon": "❌", "color": "#D32F2F"},
                     {"title": "Taux de réussite", "value": "0%", "icon": "📊", "color": "#6A1B9A"},
@@ -76,8 +77,8 @@ class PackagingFrame(ctk.CTkFrame):
                 ]
         else:
             self.cards_data = [
-                {"title": "Emballages en cours", "value": "0", "icon": "📦", "color": "#00B8D4"},
-                {"title": "Emballages terminés", "value": "0", "icon": "✅", "color": "#43A047"},
+                {"title": "Emballages neufs", "value": "0", "icon": "📦", "color": "#00B8D4"},
+                {"title": "Emballages récupérés", "value": "0", "icon": "✅", "color": "#43A047"},
                 {"title": "Emballages en attente", "value": "0", "icon": "⏳", "color": "#FFA000"},
                 {"title": "Emballages rejetés", "value": "0", "icon": "❌", "color": "#D32F2F"},
                 {"title": "Taux de réussite", "value": "0%", "icon": "📊", "color": "#6A1B9A"},
@@ -288,7 +289,7 @@ class PackagingFrame(ctk.CTkFrame):
         type_menu.pack(fill="x", pady=(0, 15))
         
         ctk.CTkLabel(form_frame, text="État d'emballage:", font=ctk.CTkFont(size=14), text_color="#666666").pack(anchor="w", pady=(0, 5))
-        etat_menu = ctk.CTkOptionMenu(form_frame, values=["Neuf", "Recupere"], width=300, height=36, font=ctk.CTkFont(size=14))
+        etat_menu = ctk.CTkOptionMenu(form_frame, values=["Neuf", "Recupere", "En attente", "Rejeté"], width=300, height=36, font=ctk.CTkFont(size=14))
         etat_menu.pack(fill="x", pady=(0, 20))
         
         # Boutons
@@ -333,7 +334,7 @@ class PackagingFrame(ctk.CTkFrame):
         type_menu.pack(fill="x", pady=(0, 15))
         
         ctk.CTkLabel(form_frame, text="État d'emballage:", font=ctk.CTkFont(size=14), text_color="#666666").pack(anchor="w", pady=(0, 5))
-        etat_menu = ctk.CTkOptionMenu(form_frame, values=["Neuf", "Recupere"], width=300, height=36, font=ctk.CTkFont(size=14))
+        etat_menu = ctk.CTkOptionMenu(form_frame, values=["Neuf", "Recupere", "En attente", "Rejeté"], width=300, height=36, font=ctk.CTkFont(size=14))
         etat_menu.set(emballage['etat'])
         etat_menu.pack(fill="x", pady=(0, 20))
         

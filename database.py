@@ -425,18 +425,27 @@ def get_emballage_stats():
     cursor.execute("""
         SELECT 
             COUNT(*) as total,
-            COUNT(CASE WHEN etat_emballage = 'disponible' THEN 1 END) as disponible,
-            COUNT(CASE WHEN etat_emballage = 'en_utilisation' THEN 1 END) as en_utilisation,
-            COUNT(CASE WHEN etat_emballage = 'hors_service' THEN 1 END) as hors_service
+            COUNT(CASE WHEN etat_emballage = 'Neuf' THEN 1 END) as neuf,
+            COUNT(CASE WHEN etat_emballage = 'Recupere' THEN 1 END) as recupere
         FROM sge_cre.materiel_emballage
     """)
     stats = cursor.fetchone()
     conn.close()
+    
+    total = stats[0] if stats[0] else 0
+    neuf = stats[1] if stats[1] else 0
+    recupere = stats[2] if stats[2] else 0
+    
+    # Calculer le taux de réussite
+    taux_reussite = 0
+    if total > 0:
+        taux_reussite = round((recupere / total) * 100, 1)
+    
     return {
-        "total": stats[0] if stats[0] else 0,
-        "disponible": stats[1] if stats[1] else 0,
-        "en_utilisation": stats[2] if stats[2] else 0,
-        "hors_service": stats[3] if stats[3] else 0
+        "total": total,
+        "neuf": neuf,
+        "recupere": recupere,
+        "taux_reussite": taux_reussite
     }
 
 # =============================================
